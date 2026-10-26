@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="https://github.com/alfrededison/tizen-toolbox/installer" version="0.1.0" viewmodes="maximized">
+<widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="https://github.com/alfrededison/tizen-toolbox/installer" version="1.0.0" viewmodes="maximized">
     <access origin="*" subdomains="true"></access>
     <tizen:application id="TboxInst01.Installer" package="TboxInst01" required_version="3.0"/>
     <author href="https://github.com/alfrededison/tizen-toolbox">tizen-toolbox</author>

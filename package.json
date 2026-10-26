@@ -1,6 +1,6 @@
 {
   "name": "tizen-toolbox",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Self-made Samsung Tizen TV apps that use Developer Mode host 127.0.0.1: a LAN app installer and a YouTube mod.",
   "license": "GPL-3.0-only",

@@ -6,7 +6,7 @@ Two apps, one shared core:
 
 | Path | What it is | Status |
 | --- | --- | --- |
-| `apps/installer` | **TV Installer** — install `.wgt`/`.tpk` over your LAN from a phone/computer browser or `npm run push`, list/open/uninstall apps. | v0.1, needs on-TV testing |
+| `apps/installer` | **TV Installer** — install `.wgt`/`.tpk` over your LAN from a phone/computer browser or `npm run push`, list/open/uninstall apps. | v1.0.0, tested on a Tizen 6.5 TV |
 | `apps/ytmod` | **YouTube mod** — loads YouTube TV with a pinned, bundled userscript (TizenTube-based) injected over DevTools. | planned |
 | `packages/sdb-core` | Minimal SDB client (handshake, shell, `vd_appinstall`, `vd_appuninstall`, `debug`) shared by both apps. | tested against a fake sdbd |
 

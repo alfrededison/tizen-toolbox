@@ -18,7 +18,7 @@ var dl = require('./download');
 var tv = require('./tv');
 var signingLib = require('./signing');
 
-var VERSION = '0.1.0';
+var VERSION = '1.0.0';
 var MAX_UPLOAD = 200 * 1024 * 1024;
 // Re-signing holds the package unpacked in memory several times over.
 var MAX_RESIGN = 100 * 1024 * 1024;
