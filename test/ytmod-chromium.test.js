@@ -52,15 +52,18 @@ function launchChrome(t) {
     });
 }
 
-// /tv: a head script that blocks for a moment, so the first execution context
-// exists well before <body> is parsed (like YouTube TV's big head bundle).
+// /tv: slow scripts in <head> and at the end of <body>, so the first execution
+// context exists well before <body> is parsed and the document is still
+// loading when the userscript runs (like YouTube TV with its big bundles).
+// window._yttv is a minimal stand-in for YouTube TV's service registry, which
+// TizenTube's picture-in-picture module looks up once the page has loaded.
 function startSite() {
     const server = http.createServer((req, res) => {
         if (req.url.startsWith('/slow.js')) {
             return setTimeout(() => { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end('window.slowLoaded = true;'); }, 700);
         }
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end('<!doctype html><html><head><script src="/slow.js"></script></head><body><div id="app">app</div></body></html>');
+        res.end('<!doctype html><html><head><script>window._yttv={app:{mappings:{},get:function(){return{start:function(){},stop:function(){}};}}};</script><script src="/slow.js"></script></head><body><div id="app">app</div><script src="/slow.js?end"></script></body></html>');
     });
     return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((c) => server.close(c)) })));
 }
@@ -114,4 +117,12 @@ test('an error thrown by the userscript is reported with its message', { skip: !
     if (!inj) return;
     assert.strictEqual(inj.state.phase, 'error');
     assert.match(inj.state.error, /Userscript threw: TypeError: boom from userscript/);
+});
+
+test('the real bundled TizenTube runs without throwing on a fresh profile (empty localStorage)', { skip: !CHROME && 'no Chromium found' }, async (t) => {
+    const real = fs.readFileSync(require.resolve('@foxreis/tizentube/dist/userScript.js'), 'utf8');
+    const inj = await runWith(t, real);
+    if (!inj) return;
+    assert.strictEqual(inj.state.phase, 'running', (inj.state.error || '') + '\n' + inj.state.log.map((l) => l.msg).join('\n'));
+    assert.ok(inj.state.log.some((l) => /Compatibility patches: recurring-actions-missing/.test(l.msg)));
 });

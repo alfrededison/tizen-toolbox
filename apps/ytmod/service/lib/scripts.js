@@ -163,9 +163,56 @@ function downloadVersion(versionOrTag, ctx) {
     });
 }
 
+// ---- compatibility patches ---------------------------------------------------
+//
+// Small, targeted fixes for TizenTube bugs that only show up in YT Mod's
+// setting (a fresh YouTube profile inside our own app). Each one is matched
+// by a pattern; if a TizenTube version no longer has the bug, the pattern
+// doesn't match and nothing changes.
+
+var COMPAT_PATCHES = [
+    {
+        id: 'recurring-actions-missing',
+        // ui/disableWhosWatching.js runs at load and does
+        //   JSON.parse(localStorage['yt.leanback.default::recurring_actions'])
+        // which throws "Unexpected token u in JSON" until YouTube has created
+        // that entry, aborting every module loaded after it. Skip the
+        // function until the entry exists (it runs again on the next launch).
+        description: "skip TizenTube's who's-watching tweak until YouTube has created its recurring-actions storage",
+        pattern: /(function [\w$]+\([\w$]+\)\{)(var [\w$]+=JSON\.parse\(localStorage\["yt\.leanback\.default::recurring_actions"\]\))/g,
+        replace: '$1if(!localStorage["yt.leanback.default::recurring_actions"])return;$2'
+    }
+];
+
+function applyCompatPatches(code) {
+    var applied = [];
+    for (var i = 0; i < COMPAT_PATCHES.length; i++) {
+        var p = COMPAT_PATCHES[i];
+        var count = 0;
+        code = code.replace(p.pattern, function () {
+            count++;
+            var args = arguments;
+            return p.replace.replace(/\$(\d)/g, function (m, n) { return args[Number(n)]; });
+        });
+        if (count) applied.push(p.id);
+    }
+    return { code: code, applied: applied };
+}
+
+function withPatches(result) {
+    var patched = applyCompatPatches(result.code);
+    result.code = patched.code;
+    result.patches = patched.applied;
+    return result;
+}
+
 // settings: { source: 'bundled' | 'npm', version: 'latest' | 'x.y.z' }
 // ctx: { bundledDir, cacheDir, log }
 function resolveScript(settings, ctx) {
+    return resolveRaw(settings, ctx).then(withPatches);
+}
+
+function resolveRaw(settings, ctx) {
     settings = settings || {};
     if (settings.source !== 'npm') return Promise.resolve().then(function () { return readBundled(ctx.bundledDir); });
 
@@ -193,5 +240,7 @@ module.exports = {
     listVersions: listVersions,
     extractFromTgz: extractFromTgz,
     compareVersions: compareVersions,
-    readBundled: readBundled
+    readBundled: readBundled,
+    applyCompatPatches: applyCompatPatches,
+    COMPAT_PATCHES: COMPAT_PATCHES
 };

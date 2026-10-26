@@ -397,3 +397,18 @@ test('built ES5 bundle boots and injects the real bundled TizenTube end to end',
     const evaluated = dt.calls.find((c) => c.method === 'Runtime.evaluate');
     assert.ok(evaluated.params.expression.length > 100000, 'the real userscript was sent');
 });
+
+test('compat patch guards TizenTube against missing recurring_actions storage (bundled version)', () => {
+    const real = fs.readFileSync(require.resolve('@foxreis/tizentube/dist/userScript.js'), 'utf8');
+    const r = scripts.applyCompatPatches(real);
+    assert.deepStrictEqual(r.applied, ['recurring-actions-missing']);
+    assert.match(r.code, /\{if\(!localStorage\["yt\.leanback\.default::recurring_actions"\]\)return;var [\w$]+=JSON\.parse/);
+    // The patched function no longer throws without the entry.
+    const vm = require('vm');
+    const fn = 'function jo(e){var t=JSON.parse(localStorage["yt.leanback.default::recurring_actions"]),i=1;return t.data}';
+    const patched = scripts.applyCompatPatches(fn + ';jo(1)').code;
+    assert.doesNotThrow(() => vm.runInNewContext(patched, { localStorage: {}, JSON }));
+    assert.throws(() => vm.runInNewContext(fn + ';jo(1)', { localStorage: {}, JSON }));
+    // Code without the bug is left alone.
+    assert.deepStrictEqual(scripts.applyCompatPatches('var x=1').applied, []);
+});

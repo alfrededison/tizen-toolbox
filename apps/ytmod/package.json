@@ -1,6 +1,6 @@
 {
   "name": "@tizen-toolbox/ytmod",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "YouTube TV with the TizenTube userscript (ad blocking, SponsorBlock), injected over DevTools via Developer Mode host 127.0.0.1.",
   "private": true,
   "license": "GPL-3.0-only",

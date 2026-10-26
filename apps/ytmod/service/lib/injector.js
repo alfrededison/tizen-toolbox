@@ -136,6 +136,7 @@ function createInjector(opts) {
             state.script = { label: s.label, version: s.version, from: s.from, warning: s.warning || null, size: s.code.length };
             mark('script', 'ok', s.label);
             if (s.warning) log('Warning: ' + s.warning);
+            if (s.patches && s.patches.length) log('Compatibility patches: ' + s.patches.join(', '));
             log('Using ' + s.label + ' (' + Math.round(s.code.length / 1024) + ' KB)');
             setPhase('handover');
             return state;
@@ -204,7 +205,8 @@ function createInjector(opts) {
             if (exceptions++ >= 5) return;
             var d = p && p.exceptionDetails;
             var text = d ? ((d.exception && d.exception.description) || d.text || 'error') : 'error';
-            log('Page error: ' + String(text).split('\n')[0].slice(0, 200));
+            var where = d && d.url ? ' (' + String(d.url).slice(0, 80) + ':' + ((d.lineNumber || 0) + 1) + ')' : '';
+            log('Page error: ' + String(text).split('\n')[0].slice(0, 160) + where);
         });
         c.on('Page.frameNavigated', function (p) {
             var f = p && p.frame;
