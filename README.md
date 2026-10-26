@@ -14,39 +14,56 @@ Why: TizenBrew and TizenTube keep breaking, and keeping the host on 127.0.0.1 us
 
 ## One-time setup
 
-Samsung TVs only install packages whose **distributor certificate is issued by Samsung and lists the TV's DUID**; anything else fails with `Check certificate error : :Invalid signature …`. They also only accept an update signed with the **same author certificate** as the installed copy. So everything here is signed with one Samsung certificate kept in `certs/` (git-ignored). **Back up `certs/`**: if you lose it, every app signed with it has to be uninstalled before it can be updated.
+Samsung TVs only install packages whose **distributor certificate is issued by Samsung and lists the TV's DUID**; anything else fails with `Check certificate error : :Invalid signature …`. They also only accept an update signed with the **same author certificate** as the installed copy. So the Installer is installed once with your Samsung certificate, and then signs everything it installs with that same certificate.
 
-1. **Get the certificate** (on your computer, Node 18+):
+Download `installer-unsigned.wgt` from the [latest release](https://github.com/alfrededison/tizen-toolbox/releases/latest) (or build it: `npm install && npm run build -- installer`), then install it one of two ways.
+
+### With Apps2Samsung (easiest)
+
+1. Install `installer-unsigned.wgt` with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (Developer Mode ON, Host PC IP = your computer). It signs the package with the Samsung certificate it creates for your TV.
+2. **Switch the TV to 127.0.0.1 for good:** Apps → press `1 2 3 4 5` → Developer Mode ON, Host PC IP `127.0.0.1` → OK → restart the TV (hold power until the logo).
+3. Open **TV Installer** on the TV. It shows its DUID, the LAN address (e.g. `http://192.168.1.20:8093`) and a 6-digit PIN.
+4. **Give the Installer that same Apps2Samsung certificate.** Otherwise updates of the Installer, and of apps Apps2Samsung installed, are refused (`Author certificate not match`). Either open the LAN address in a browser and upload `author.p12`, `distributor.p12` and the password from `password.txt` in the *Signing certificate* card (they are in Apps2Samsung's `Certificate/<name> - Public` folder: `~/Library/Application Support/Apps2Samsung` on macOS, `%APPDATA%\Apps2Samsung` on Windows), or from a checkout of this repo:
    ```sh
    npm install
-   npm run cert -- import                                    # reuse the one Apps2Samsung made, or
+   npm run cert -- import                                    # copies it into certs/
+   npm run push -- --cert --tv 192.168.1.20 --pin 123456
+   ```
+   The TV then shows four green checks, the last one `Signing: <name>`.
+
+### With your own certificate and sdb
+
+On your computer (Node 18+), from a checkout of this repo. The certificate lives in `certs/` (git-ignored); **back it up**: if you lose it, every app signed with it has to be uninstalled before it can be updated.
+
+1. **Get the certificate:**
+   ```sh
+   npm install
    npm run cert -- add-tv <DUID> --email <your Samsung account email> --name "Your Name"
    npm run cert                                              # shows what is in certs/
    ```
-   - `import` copies `author.p12`, `distributor.p12` and `password.txt` from an [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) certificate folder (found automatically on macOS/Windows, or pass the folder). Apps already installed with Apps2Samsung keep updating, because the author certificate stays the same.
    - `add-tv` signs in to your Samsung account (paste back the JSON the sign-in page shows) and asks Samsung for a distributor certificate for that DUID. Run it again with another DUID to add a TV; it keeps the TVs already listed, their privilege level (override with `--partner` / `--public`) and your author certificate. It refuses an author certificate that Samsung didn't issue; `--new-author` replaces it (apps signed with the old one then need uninstalling before they can be updated).
-   - The DUID is shown on the TV Installer screen once it runs, or get it with `sdb shell 0 getduid` (step 3).
-2. **Build:**
+   - `npm run cert -- import` copies an existing Apps2Samsung certificate instead (found automatically on macOS/Windows, or pass the folder).
+   - Get the DUID with `sdb shell 0 getduid` (step 3).
+2. **Sign the package:**
    ```sh
-   npm run build -- installer   # -> dist/installer.wgt, "signed with certs/author.p12 + Samsung distributor …"
+   npm run sign -- installer-unsigned.wgt installer.wgt   # or: npm run build -- installer -> dist/installer.wgt
    ```
-   If it prints `not signed: …` or mentions the Tizen public distributor, fix that first.
+   It should say `Signed with certs/author.p12 + Samsung distributor …`.
 3. **Point the TV at your computer:** Apps → press `1 2 3 4 5` → Developer Mode ON, Host PC IP = your computer's IP → OK → restart the TV (hold power until the logo).
-4. **Install `dist/installer.wgt` once from your computer** with `sdb` (from Tizen Studio or the Tizen VS Code extension):
+4. **Install it once** with `sdb` (from Tizen Studio or the Tizen VS Code extension):
    ```sh
    sdb connect 192.168.1.20                  # your TV's IP
    sdb shell 0 getduid                       # the DUID for step 1, if you need it
-   sdb push dist/installer.wgt /home/owner/share/tmp/sdk_tools/installer.wgt
+   sdb push installer.wgt /home/owner/share/tmp/sdk_tools/installer.wgt
    sdb shell 0 vd_appinstall TboxInst01 /home/owner/share/tmp/sdk_tools/installer.wgt
    ```
-   It prints `install completed` when done. If it was installed before with a different author certificate, remove it first with `sdb shell 0 vd_appuninstall TboxInst01`.
+   It prints `install completed` when done. If it was installed before with a different author certificate, remove it first with `sdb shell 0 vd_appuninstall TboxInst01.Installer`.
 5. **Switch the TV to 127.0.0.1 for good:** Apps → `1 2 3 4 5` → Host PC IP `127.0.0.1` → OK → restart the TV.
-6. Open **TV Installer** on the TV. It shows its DUID, the LAN address (e.g. `http://192.168.1.20:8093`) and a 6-digit PIN.
-7. **Give the Installer your certificate**, so it can sign every package it installs:
+6. Open **TV Installer** on the TV, then **give it your certificate** so it can sign every package it installs:
    ```sh
    npm run push -- --cert --tv 192.168.1.20 --pin 123456
    ```
-   (or upload `author.p12`, `distributor.p12` and the password in the browser page's *Signing certificate* card). The TV then shows four green checks, the last one *Signing: <your name>*.
+   (or upload the files and password in the browser page's *Signing certificate* card). The TV then shows four green checks, the last one `Signing: <your name>`.
 
 ## Installing apps after that
 
@@ -66,21 +83,20 @@ Re-signing means an app is installed under your author certificate. An app that 
 
 ## Updating the Installer
 
-Build a new version (signed with the same `certs/`) and push it to the running Installer:
+The Installer can install a new version of itself; it re-signs it with your certificate like any other package. On the browser page, paste `alfrededison/tizen-toolbox` to install the latest release, or from a checkout:
 
 ```sh
-npm run bump:installer -- patch      # or minor / major / x.y.z
-npm run build -- installer
-npm run push -- dist/installer.wgt
+npm run push -- --url alfrededison/tizen-toolbox     # latest release
+npm run push -- dist/installer.wgt                   # or your own build
 ```
 
-The GitHub release workflow signs with the `TIZEN_AUTHOR_KEY_B64`, `TIZEN_DISTRIBUTOR_KEY_B64` and `TIZEN_AUTHOR_KEY_PW` secrets (`base64 -i certs/author.p12`, `base64 -i certs/distributor.p12`, the contents of `certs/password.txt`). Release builds then install only on the TVs your distributor certificate lists.
+Releases are unsigned, so anyone can install them with their own certificate. To publish one, bump the version (`npm run bump:installer -- patch`, and the repo's `package.json` by hand), merge to `main`, and push a matching tag (`git tag v1.0.1 && git push origin v1.0.1`). The workflow checks the tag against `apps/installer/config.xml`, runs the tests, builds, and attaches `installer-unsigned.wgt` to a GitHub release.
 
 ## Signing
 
 On the TV, the Installer keeps your certificate (uploaded with `npm run push -- --cert` or the browser page) in its private storage and signs every package with it (`packages/tizen-sign`, an ES5 port of tizen.js's signer). The API only ever returns a description of it, never the files or the password; uploading it sends the files and password over your home network unencrypted, like the PIN. Remove it from the browser page to install packages exactly as they are. Re-signing on the TV is limited to packages of 100 MB.
 
-On your computer, `npm run build` and `npm run sign` use `certs/author.p12`, `certs/distributor.p12` and `certs/password.txt` (see [One-time setup](#one-time-setup)); `npm run sign -- some-app.wgt` signs a package without the Installer. Without `certs/distributor.p12` the build falls back to the Tizen public distributor, which Samsung TVs reject. Env overrides: `TIZEN_AUTHOR_KEY`, `TIZEN_AUTHOR_KEY_PW`, `TIZEN_DISTRIBUTOR_KEY`, `TIZEN_DISTRIBUTOR_KEY_PW`.
+On your computer, `npm run build` and `npm run sign` use `certs/author.p12`, `certs/distributor.p12` and `certs/password.txt` (see [With your own certificate and sdb](#with-your-own-certificate-and-sdb)); `npm run sign -- some-app.wgt` signs a package without the Installer. Without `certs/distributor.p12` the build falls back to the Tizen public distributor, which Samsung TVs reject. Env overrides: `TIZEN_AUTHOR_KEY`, `TIZEN_AUTHOR_KEY_PW`, `TIZEN_DISTRIBUTOR_KEY`, `TIZEN_DISTRIBUTOR_KEY_PW`.
 
 When an install fails with the certificate error, the Installer says which DUID the certificate must list. Without a certificate on the TV, it refuses unsigned uploads unless you tick "install anyway".
 
