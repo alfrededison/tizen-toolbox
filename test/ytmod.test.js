@@ -44,8 +44,10 @@ function startFakeDevtools({ evaluateThrows = false } = {}) {
             const msg = JSON.parse(String(data));
             calls.push(msg);
             let result = {};
-            if (msg.method === 'Runtime.evaluate' && evaluateThrows && msg.params.expression.length > 1000) {
-                result = { result: { type: 'object' }, exceptionDetails: { text: 'Uncaught', exception: { description: 'TypeError: boom\n at x' } } };
+            if (msg.method === 'Runtime.evaluate' && /^window\.__ytmodState\?/.test(msg.params.expression)) {
+                // Poll for the wrapped userscript's outcome.
+                const outcome = evaluateThrows ? { status: 'error', error: 'TypeError: boom\n    at x (y.js:1:2)' } : { status: 'ok' };
+                result = { result: { type: 'string', value: JSON.stringify(outcome) } };
             }
             ws.send(JSON.stringify({ id: msg.id, result }));
             if (msg.method === 'Page.navigate') {
@@ -282,8 +284,9 @@ test('full flow: dev mode -> script -> debug relaunch -> DevTools -> YouTube -> 
     const evals = dt.calls.filter((c) => c.method === 'Runtime.evaluate');
     assert.strictEqual(evals[0].params.contextId, 9, 'only the YouTube main-frame context gets the script');
     assert.match(evals[0].params.expression, /window\.__tt = "bundled"/);
-    await waitFor(() => dt.calls.filter((c) => c.method === 'Runtime.evaluate').length === 2);
-    assert.match(dt.calls.filter((c) => c.method === 'Runtime.evaluate')[1].params.expression, /YT Mod: TizenTube 1\.15\.2 \(bundled\)/);
+    assert.match(evals[0].params.expression, /if\(document\.body\)run\(\)/, 'the script waits for <body>');
+    assert.ok(evals.some((e) => /__ytmodState\?JSON/.test(e.params.expression)), 'the outcome is polled');
+    await waitFor(() => dt.calls.some((c) => c.method === 'Runtime.evaluate' && /YT Mod: TizenTube 1\.15\.2 \(bundled\)/.test(c.params.expression)));
     assert.deepStrictEqual(inj.state.steps.map((s) => s.status), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
 
     // YouTube exits -> DevTools closes -> idle again.

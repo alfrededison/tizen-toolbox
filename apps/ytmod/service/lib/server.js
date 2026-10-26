@@ -7,7 +7,7 @@
 var http = require('http');
 var scripts = require('./scripts');
 
-var VERSION = '0.1.0';
+var VERSION = '0.1.1';
 
 function isLocalApp(req) {
     var a = req.socket.remoteAddress;

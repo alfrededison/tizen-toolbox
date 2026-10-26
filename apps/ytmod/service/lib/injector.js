@@ -206,6 +206,12 @@ function createInjector(opts) {
             var text = d ? ((d.exception && d.exception.description) || d.text || 'error') : 'error';
             log('Page error: ' + String(text).split('\n')[0].slice(0, 200));
         });
+        c.on('Page.frameNavigated', function (p) {
+            var f = p && p.frame;
+            if (f && !f.parentId) log('Page: ' + String(f.url).slice(0, 120));
+        });
+        c.on('Inspector.detached', function (p) { log('DevTools detached: ' + (p && p.reason)); });
+        c.on('Inspector.targetCrashed', function () { log('The page crashed'); });
         c.on('close', function () {
             if (client !== c) return;
             client = null;
@@ -214,13 +220,48 @@ function createInjector(opts) {
         });
     }
 
+    // TizenTube's modules expect document.body to exist when they load (some
+    // call MutationObserver.observe(document.body) at top level), but a new
+    // context is created before the body is parsed. So the script is wrapped:
+    // it runs as soon as <body> exists, and records success or the error in
+    // window.__ytmodState, which is polled here.
+    function wrapScript(code) {
+        return '(function(){' +
+            'if(window.__ytmodState)return "already";' +
+            'window.__ytmodState={status:"waiting"};' +
+            'function run(){window.__ytmodState={status:"running"};' +
+            'try{(function(){\n' + code + '\n}).call(window);window.__ytmodState={status:"ok"};}' +
+            'catch(e){window.__ytmodState={status:"error",error:String(e&&(e.stack||e.message)||e)};}}' +
+            'if(document.body)run();else{var t=setInterval(function(){if(document.body){clearInterval(t);run();}},5);}' +
+            'return "scheduled";})()';
+    }
+
+    var POLL_EXPRESSION = 'window.__ytmodState?JSON.stringify(window.__ytmodState):null';
+
+    function pollResult(c, contextId, deadline) {
+        return c.send('Runtime.evaluate', { expression: POLL_EXPRESSION, contextId: contextId, returnByValue: true }).then(function (res) {
+            var value = res && res.result && res.result.value;
+            var parsed = null;
+            try { parsed = value ? JSON.parse(value) : null; } catch (e) { /* keep polling */ }
+            if (parsed && (parsed.status === 'ok' || parsed.status === 'error')) return parsed;
+            if (Date.now() > deadline) return { status: 'error', error: 'The page never got a <body> (still ' + (parsed ? parsed.status : 'unknown') + ' after 30 s)' };
+            return new Promise(function (r) { setTimeout(r, 150); }).then(function () { return pollResult(c, contextId, deadline); });
+        });
+    }
+
     function inject(c, contextId) {
         var started = Date.now();
-        c.send('Runtime.evaluate', { expression: script.code, contextId: contextId, silent: false }).then(function (res) {
+        c.send('Runtime.evaluate', { expression: wrapScript(script.code), contextId: contextId, silent: false }).then(function (res) {
             if (res.exceptionDetails) {
                 var d = res.exceptionDetails;
-                var text = (d.exception && d.exception.description) || d.text || 'unknown error';
-                fail('inject', new Error('Userscript threw: ' + String(text).split('\n')[0]));
+                return { status: 'error', error: (d.exception && d.exception.description) || d.text || 'unknown error' };
+            }
+            return pollResult(c, contextId, Date.now() + 30000);
+        }).then(function (outcome) {
+            if (outcome.status === 'error') {
+                var first = String(outcome.error).split('\n');
+                fail('inject', new Error('Userscript threw: ' + first[0]));
+                if (first.length > 1) log('  at ' + first.slice(1, 4).map(function (l) { return l.trim(); }).join(' | '));
                 return c.send('Runtime.evaluate', { expression: toastSnippet('YT Mod: ' + script.label + ' failed — open YT Mod again for details', '#b8352e'), contextId: contextId });
             }
             state.injections++;
@@ -232,6 +273,8 @@ function createInjector(opts) {
                 return c.send('Runtime.evaluate', { expression: toastSnippet(msg, script.warning ? '#9a6b00' : '#1f6f4a'), contextId: contextId });
             }
         }).catch(function (err) {
+            // A navigation can destroy the context mid-poll; the next context retries.
+            if (/context/i.test(err.message)) return log('Context went away before the script finished (' + err.message + ')');
             fail('inject', err);
         });
     }
