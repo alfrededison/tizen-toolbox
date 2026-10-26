@@ -15,6 +15,7 @@
   "scripts": {
     "build": "node scripts/build.js",
     "build:installer": "node scripts/build.js installer",
+    "bump:installer": "node scripts/bump-installer.js",
     "sign": "node scripts/sign.js",
     "push": "node scripts/push.js",
     "test": "node --test test/*.test.js"
