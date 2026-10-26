@@ -13,7 +13,7 @@
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
   .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 10px; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  input[type=text], input[type=password] { flex:1 1 220px; min-width:0; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:#0b0d11; color:var(--text); font-size:15px; }
+  input[type=text], input[type=password], input[type=search] { flex:1 1 220px; min-width:0; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:#0b0d11; color:var(--text); font-size:15px; }
   button { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:#232836; color:var(--text); font-size:14px; cursor:pointer; }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
   button.danger { color:var(--bad); }
@@ -89,7 +89,10 @@
 
   <section class="card">
     <h2>Apps</h2>
-    <div class="row" style="margin-bottom:8px"><button id="refreshApps">Refresh</button></div>
+    <div class="row" style="margin-bottom:8px">
+      <input id="appSearch" type="search" placeholder="Search by name or id" autocomplete="off">
+      <button id="refreshApps">Refresh</button>
+    </div>
     <p id="appsMsg"></p>
     <div class="tablewrap"><table id="apps"><tbody><tr><td>Enter the PIN to list apps.</td></tr></tbody></table></div>
   </section>
@@ -176,24 +179,41 @@
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
+  var allApps = null;
+
+  // Shows the loaded apps whose name or id contains every word typed in the search box.
+  function renderApps() {
+    if (!allApps) return;
+    var words = $('appSearch').value.toLowerCase().split(/\s+/).filter(Boolean);
+    var shown = allApps.filter(function (a) {
+      var text = ((a.name || '') + ' ' + a.id).toLowerCase();
+      return words.every(function (w) { return text.indexOf(w) !== -1; });
+    });
+    var rows = shown.map(function (a) {
+      return '<tr><td>' + esc(a.name) + '<br><span class="id">' + esc(a.id) + '</span></td>' +
+        '<td class="ver">' + esc(a.version) + '</td>' +
+        '<td class="actions"><button data-launch="' + esc(a.id) + '" data-name="' + esc(a.name) + '">Open</button> ' +
+        '<button class="danger" data-uninstall="' + esc(a.id) + '" data-name="' + esc(a.name) + '">Uninstall</button></td></tr>';
+    });
+    var empty = !allApps.length ? 'No apps reported.' : 'No apps match “' + esc($('appSearch').value.trim()) + '”.';
+    $('apps').innerHTML = '<tbody>' + (rows.join('') || '<tr><td>' + empty + '</td></tr>') + '</tbody>';
+  }
+
   // Resolves with the error, or null once the list is shown.
   function loadApps() {
     if (!pin) return Promise.resolve(null);
     return api('/api/apps').then(function (res) {
-      var rows = res.apps.map(function (a) {
-        return '<tr><td>' + esc(a.name) + '<br><span class="id">' + esc(a.id) + '</span></td>' +
-          '<td class="ver">' + esc(a.version) + '</td>' +
-          '<td class="actions"><button data-launch="' + esc(a.id) + '" data-name="' + esc(a.name) + '">Open</button> ' +
-          '<button class="danger" data-uninstall="' + esc(a.id) + '" data-name="' + esc(a.name) + '">Uninstall</button></td></tr>';
-      });
-      $('apps').innerHTML = '<tbody>' + (rows.join('') || '<tr><td>No apps reported.</td></tr>') + '</tbody>';
+      allApps = res.apps;
+      renderApps();
       return null;
     }, function (e) {
+      allApps = null;
       $('apps').innerHTML = '<tbody><tr><td class="bad">' + esc(e.message) + '</td></tr></tbody>';
       return e;
     });
   }
   $('refreshApps').onclick = function () { loadApps(); };
+  $('appSearch').oninput = renderApps;
 
   $('apps').onclick = function (e) {
     var t = e.target;
