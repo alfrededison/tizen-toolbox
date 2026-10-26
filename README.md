@@ -110,7 +110,7 @@ phone / laptop ──HTTP + PIN──▶ Installer service (Node, on the TV, :80
                                sdbd 127.0.0.1:26101 ── "0 vd_appinstall <pkgId> <path>"
 ```
 
-- sdbd only trusts the configured Host PC IP, so it is never exposed to the LAN; the service's PIN-protected API is the only door. Five wrong PINs lock it for a minute.
+- sdbd only trusts the configured Host PC IP, so it is never exposed to the LAN; the service's PIN-protected API is the only door. Five different wrong PINs lock it for a minute.
 - The TV UI (packaged page, no web origin) can call the API without a PIN; web pages — including ones opened in the TV's own browser — cannot.
 - The service is bundled with ncc, transpiled to ES5 / Node 4 with Babel, and the build fails if the bundle is not valid ES5, so it runs on old Tizen Node runtimes.
 

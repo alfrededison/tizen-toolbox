@@ -97,6 +97,15 @@ test('web-origin requests need the PIN; wrong PINs lock out', async (t) => {
     const ok = await call(port, 'GET', '/api/apps', { origin: 'http://192.168.1.50:8093', pin: '123456' });
     assert.strictEqual(ok.status, 200);
     for (let i = 0; i < 5; i++) await call(port, 'GET', '/api/apps', { origin: 'http://x', pin: '000000' });
+    for (let i = 0; i < 5; i++) await call(port, 'GET', '/api/apps', { origin: 'http://x' });
+    const notLocked = await call(port, 'GET', '/api/apps', { origin: 'http://x', pin: '123456' });
+    assert.strictEqual(notLocked.status, 200, 'a repeated or missing PIN is not a new guess');
+    // A wrong PIN keeps counting across repeats and missing PINs: the fifth distinct one locks.
+    const wrong = ['000000', '000001', '000000', '', '000002', '000003'];
+    for (const pin of wrong) await call(port, 'GET', '/api/apps', { origin: 'http://x', pin });
+    assert.strictEqual((await call(port, 'GET', '/api/status')).body.locked, false);
+    await call(port, 'GET', '/api/apps', { origin: 'http://x', pin: '__proto__' });
+    assert.strictEqual((await call(port, 'GET', '/api/status')).body.locked, true);
     const locked = await call(port, 'GET', '/api/apps', { origin: 'http://x', pin: '123456' });
     assert.strictEqual(locked.status, 429);
 });

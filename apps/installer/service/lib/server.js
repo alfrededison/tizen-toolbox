@@ -75,7 +75,7 @@ function createInstallerServer(options) {
         busy: false,
         current: null,
         lastResult: null,
-        pinFailures: 0,
+        wrongPins: Object.create(null),
         lockedUntil: 0
     };
 
@@ -188,12 +188,14 @@ function createInstallerServer(options) {
         var b = Buffer.from ? Buffer.from(state.pin) : new Buffer(state.pin);
         var ok = a.length === b.length && crypto.timingSafeEqual ? crypto.timingSafeEqual(a, b) : given === state.pin;
         if (ok) {
-            state.pinFailures = 0;
+            state.wrongPins = Object.create(null);
             return null;
         }
-        state.pinFailures++;
-        if (state.pinFailures >= MAX_PIN_FAILURES) {
-            state.pinFailures = 0;
+        // Only distinct wrong PINs count as guesses: the web page sends one PIN on
+        // several requests (and a stale one on every load), and a missing PIN is no guess.
+        if (given) state.wrongPins[given] = true;
+        if (Object.keys(state.wrongPins).length >= MAX_PIN_FAILURES) {
+            state.wrongPins = Object.create(null);
             state.lockedUntil = now + LOCK_MS;
             log('Too many wrong PINs from ' + req.socket.remoteAddress + '; locked for 60s');
         }
