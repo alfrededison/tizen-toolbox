@@ -154,6 +154,7 @@ npm run build -- installer    # build one app
 
 - Whether the service's `on-boot` auto-start works with public-level signing.
 - How long re-signing a large package takes on the TV's CPU.
+- Uninstall from the Installer is unreliable: on one TV it started failing with `uninstall failed[132]` for every app (while installs still worked), even on a commit where it had worked, and Apps2Samsung could still uninstall. The cause is unknown. If it fails, delete the app from the TV's Apps screen.
 - YT Mod: which host the DevTools port answers on (it tries 127.0.0.1, then the TV's LAN IP), and that `Page.setBypassCSP` and key registration behave as in TizenTube's injector.
 
 ## Credits & license
