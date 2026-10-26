@@ -30,4 +30,7 @@ header { display: flex; justify-content: space-between; align-items: center; mar
 .btn.danger.focus { border-color: #ff8a84; background: #b8352e; color: #fff; }
 #logBox { height: 250px; display: flex; flex-direction: column; }
 #log { flex: 1; margin: 0; background: #0b0d11; border: 2px solid #2a2f3a; border-radius: 12px; padding: 14px 18px; font-size: 20px; color: #b9c0cc; overflow: hidden; white-space: pre-wrap; }
+#notice { margin-top: 14px; font-size: 28px; padding: 12px 20px; border-radius: 10px; background: #1d212b; }
+#notice.ok { color: #3fb27f; }
+#notice.bad { color: #ff8a84; }
 .hidden { display: none !important; }

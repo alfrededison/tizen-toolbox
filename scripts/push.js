@@ -5,6 +5,7 @@
 //
 //   npm run push -- dist/ytmod.wgt --tv 192.168.1.20 --pin 123456
 //   npm run push -- --url owner/repo          # TV downloads the latest GitHub release
+//   npm run push -- --cert                    # upload certs/ so the TV signs every install
 //
 // --tv and --pin can also come from TV_HOST / TV_PIN, or from .tvrc.json
 // (created on first successful push, git-ignored).
@@ -15,6 +16,7 @@ const http = require('http');
 
 const ROOT = path.resolve(__dirname, '..');
 const RC = path.join(ROOT, '.tvrc.json');
+const { signingConfig } = require('./lib/sign');
 
 function parseArgs(argv) {
     const out = { files: [] };
@@ -24,6 +26,7 @@ function parseArgs(argv) {
         else if (a === '--pin') out.pin = argv[++i];
         else if (a === '--url') out.url = argv[++i];
         else if (a === '--force') out.force = true;
+        else if (a === '--cert') out.cert = true;
         else out.files.push(a);
     }
     return out;
@@ -61,7 +64,26 @@ async function main() {
     const q = args.force ? '?force=1' : '';
 
     let res;
-    if (args.url) {
+    if (args.cert) {
+        const c = signingConfig();
+        if (c.samsung === false) throw new Error('No Samsung distributor certificate in certs/ (run npm run cert first).');
+        if (!c.authorPwd || c.authorPwd !== c.distributorPwd) throw new Error('The TV keeps one password for both certificates; put it in certs/password.txt.');
+        for (const f of [c.authorKey, c.distributorKey]) if (!fs.existsSync(f)) throw new Error('Missing ' + f);
+        console.log(`Uploading the signing certificate to ${host}:${port} ...`);
+        const body = Buffer.from(JSON.stringify({
+            author: fs.readFileSync(c.authorKey).toString('base64'),
+            distributor: fs.readFileSync(c.distributorKey).toString('base64'),
+            password: c.authorPwd,
+        }));
+        res = await request({ host, port, method: 'POST', path: '/api/cert', headers: { 'X-PIN': pin, 'Content-Type': 'application/json', 'Content-Length': body.length } }, body);
+        if (res.status === 200) {
+            const b = res.body;
+            console.log(`The TV now signs every install with ${b.author.name} / ${b.distributor.name} (TVs: ${b.distributor.duids.join(', ') || 'none'}).`);
+            for (const w of b.warnings || []) console.warn('Warning: ' + w);
+            fs.writeFileSync(RC, JSON.stringify({ tv, pin }, null, 2));
+            return;
+        }
+    } else if (args.url) {
         console.log(`Asking the TV to install ${args.url} ...`);
         const body = Buffer.from(JSON.stringify({ url: args.url }));
         res = await request({ host, port, method: 'POST', path: '/api/install-url' + q, headers: { 'X-PIN': pin, 'Content-Type': 'application/json', 'Content-Length': body.length } }, body);
@@ -83,6 +105,7 @@ async function main() {
     }
     console.error(`Failed (HTTP ${res.status}): ${res.body.error || 'see output'}`);
     if (res.body.output) console.error(res.body.output);
+    if (res.body.hint) console.error(res.body.hint);
     process.exit(1);
 }
 

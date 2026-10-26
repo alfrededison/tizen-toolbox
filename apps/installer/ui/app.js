@@ -11,14 +11,20 @@
     var actionIndex = 0;
     var confirmUninstall = false;
     var serviceOk = false;
+    // The service sends the PIN only to requests without an Origin header, as
+    // the TV UI's are; it goes back with every request in case some of ours
+    // (e.g. POSTs) carry an Origin and so need it.
+    var pin = '';
 
     function $(id) { return document.getElementById(id); }
 
     function request(method, path, body, cb) {
         var xhr = new XMLHttpRequest();
         xhr.open(method, API + path, true);
-        xhr.timeout = 15000;
+        // Opening an app may take up to 30 s and uninstalling longer; status polls stay short.
+        xhr.timeout = method === 'POST' ? 120000 : 15000;
         if (body) xhr.setRequestHeader('Content-Type', 'application/json');
+        if (pin) xhr.setRequestHeader('X-PIN', pin);
         xhr.onload = function () {
             var data = null;
             try { data = JSON.parse(xhr.responseText); } catch (e) { data = {}; }
@@ -74,12 +80,17 @@
 
     function renderStatus(s) {
         var d = s.devInfo || {};
-        $('ver').textContent = 'v' + s.version + (s.platformVersion ? ' · Tizen ' + s.platformVersion : '');
+        $('ver').textContent = 'v' + s.version + (s.platformVersion ? ' · Tizen ' + s.platformVersion : '') + (s.duid ? ' · DUID ' + s.duid : '');
+        var sig = s.signing || {};
         $('checks').innerHTML =
             badge(true, 'Service') +
             badge(!!d.devModeEnabled, 'Developer mode') +
-            badge(!!d.hostIsLocal, 'Host 127.0.0.1');
+            badge(!!d.hostIsLocal, 'Host 127.0.0.1') +
+            badge(sig.configured && !sig.error && sig.coversThisTv !== false,
+                !sig.configured ? 'No signing certificate' : sig.error ? 'Certificate error' :
+                    sig.coversThisTv === false ? 'Certificate not for this TV' : 'Signing: ' + esc(sig.name));
         $('lanUrl').textContent = s.lanUrl || 'TV IP unknown';
+        if (s.pin) pin = s.pin;
         $('pin').textContent = s.pin || '······';
 
         var setup = '';
@@ -129,6 +140,16 @@
         var bottom = row.offsetTop + row.offsetHeight + pad;
         if (top < box.scrollTop) box.scrollTop = Math.max(0, top);
         else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight;
+    }
+
+    // One line under the list for what Open/Uninstall are doing and how it went.
+    var noticeTimer = null;
+    function notice(text, kind) {
+        var el = $('notice');
+        el.textContent = text;
+        el.className = kind || '';
+        clearTimeout(noticeTimer);
+        if (kind === 'ok') noticeTimer = setTimeout(function () { el.className = 'hidden'; }, 8000);
     }
 
     function renderActions() {
@@ -181,7 +202,11 @@
         if (act === 'launch') {
             actionMode = false;
             renderApps();
-            return request('POST', '/api/launch', { appId: app.id }, function () { });
+            notice('Opening ' + app.name + '…');
+            return request('POST', '/api/launch', { appId: app.id }, function (err) {
+                if (err) notice('Could not open ' + app.name + ': ' + err.message, 'bad');
+                else notice('Opened ' + app.name, 'ok');
+            });
         }
         if (act === 'uninstall') {
             if (!confirmUninstall) {
@@ -191,7 +216,12 @@
             confirmUninstall = false;
             actionMode = false;
             renderApps();
-            request('POST', '/api/uninstall', { packageId: app.packageId }, function () { loadApps(); });
+            notice('Uninstalling ' + app.name + '…');
+            request('POST', '/api/uninstall', { appId: app.id }, function (err, data) {
+                if (err || !data.ok) notice('Could not uninstall ' + app.name + ': ' + (err ? err.message : data.error), 'bad');
+                else notice('Uninstalled ' + app.name, 'ok');
+                loadApps();
+            });
         }
     }
 

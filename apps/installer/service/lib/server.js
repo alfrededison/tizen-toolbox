@@ -16,12 +16,33 @@ var sdb = require('../../../../packages/sdb-core');
 var pkg = require('./pkg');
 var dl = require('./download');
 var tv = require('./tv');
+var signingLib = require('./signing');
 
 var VERSION = '0.1.0';
 var MAX_UPLOAD = 200 * 1024 * 1024;
+// Re-signing holds the package unpacked in memory several times over.
+var MAX_RESIGN = 100 * 1024 * 1024;
 var MAX_LOG = 200;
 var MAX_PIN_FAILURES = 5;
 var LOCK_MS = 60 * 1000;
+var DUID_RE = /^[A-Z0-9]{8,32}$/;
+// vd_appinstall's messages when the TV rejects a package's signature or certificates.
+var CERT_ERROR_RE = /check certificate error|certificate not match/i;
+var AUTHOR_MISMATCH_RE = /author certificate not match/i;
+
+// The TV tools' reason for a failure, e.g. "Author certificate not match" from
+// "app_id[x] install failed[118, -11], reason: Author certificate not match :".
+function failureReason(output) {
+    var lines = String(output || '').split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+        var m = /reason:\s*(.*?)[\s:]*$/i.exec(lines[i]);
+        if (m && m[1]) return m[1];
+    }
+    for (var j = lines.length - 1; j >= 0; j--) {
+        if (/fail|error|invalid|denied|not found/i.test(lines[j])) return lines[j].trim();
+    }
+    return 'see the log';
+}
 
 function mkdirp(dir) {
     if (fs.existsSync(dir)) return;
@@ -44,7 +65,7 @@ function createInstallerServer(options) {
     options = options || {};
     var tmpDir = options.tmpDir || process.env.TBOX_TMP_DIR || '/home/owner/share/tmp/sdk_tools';
     var webDir = options.webDir || path.join(__dirname, '..', 'web');
-    var port = options.port || 8093;
+    var port = options.port !== undefined ? options.port : 8093; // 0 picks a free port (tests)
     var sdbOpts = options.sdb || {};
     var devInfoOpts = options.devInfo || {};
 
@@ -70,14 +91,43 @@ function createInstallerServer(options) {
         log(text);
     }
 
+    // The user's signing certificate; when present, every package is re-signed
+    // with it before installing (see signing.js).
+    var signing = signingLib.createSigningStore(options.signingDir !== undefined ? options.signingDir :
+        signingLib.findPrivateDir(signingLib.defaultCandidates(tv.ownPackageId())));
+
+    // The TV's DUID, which a Samsung distributor certificate must list. Read
+    // once over sdb (the REST API's "duid" is a different, UUID-style id).
+    var duid = null;
+    var duidTriedAt = 0;
+    function readDuid() {
+        // Status is polled every 1.5 s; retry a failed read at most once a minute.
+        if (duid || Date.now() - duidTriedAt < 60000) return Promise.resolve(duid);
+        duidTriedAt = Date.now();
+        // Status waits for this, so don't let a slow sdbd hold it for sdb-core's 30 s default.
+        return sdb.getDuid(Object.assign({}, sdbOpts, { timeoutMs: 5000 })).then(function (out) {
+            if (DUID_RE.test(out)) duid = out;
+            return duid;
+        }, function () { return null; });
+    }
+
     // ---- request helpers -------------------------------------------------
 
+    // The packaged TV UI's requests carry no Origin header at all (seen on a
+    // Tizen 6.5 TV). Only those skip the PIN and get it in /api/status. A page
+    // in the TV's own browser always sends one, at least "null" (sandboxed
+    // frames, redirects), so it can't pass for the TV UI.
     function isLocalApp(req) {
+        return isLoopback(req.socket.remoteAddress) && req.headers.origin === undefined;
+    }
+
+    // CORS stays open to loopback callers without a web origin ("null",
+    // "file://"), in case the TV UI sends one on some requests; they still need
+    // the PIN, which the TV UI sends along.
+    function allowsCors(req) {
         if (!isLoopback(req.socket.remoteAddress)) return false;
-        // A web page in the TV's own browser has an http(s) origin; the
-        // packaged TV UI does not. Only the latter skips the PIN.
         var origin = req.headers.origin;
-        return !origin || !/^https?:\/\//i.test(origin);
+        return origin === undefined || !/^https?:\/\//i.test(origin);
     }
 
     function send(res, status, body, headers) {
@@ -102,7 +152,7 @@ function createInstallerServer(options) {
                 total += c.length;
                 if (total > limit) {
                     aborted = true;
-                    var err = new Error('Upload too large (limit ' + Math.round(limit / 1048576) + ' MB)');
+                    var err = new Error('Upload too large (limit ' + (limit >= 1048576 ? Math.round(limit / 1048576) + ' MB' : Math.round(limit / 1024) + ' KB') + ')');
                     err.status = 413;
                     reject(err);
                     req.resume();
@@ -115,8 +165,8 @@ function createInstallerServer(options) {
         });
     }
 
-    function readJson(req) {
-        return readBody(req, 64 * 1024).then(function (buf) {
+    function readJson(req, limit) {
+        return readBody(req, limit || 64 * 1024).then(function (buf) {
             if (!buf.length) return {};
             try { return JSON.parse(buf.toString('utf8')); } catch (e) {
                 var err = new Error('Invalid JSON body');
@@ -157,17 +207,22 @@ function createInstallerServer(options) {
         }, function (err) {
             return { devInfo: null, devInfoError: err.message };
         }).then(function (r) {
+            var ready = !!(r.devInfo && r.devInfo.devModeEnabled && r.devInfo.hostIsLocal);
+            return (ready ? readDuid() : Promise.resolve(duid)).then(function () { return r; });
+        }).then(function (r) {
             var info = r.devInfo;
             var out = {
                 app: 'tizen-toolbox-installer',
                 version: VERSION,
                 platformVersion: tv.platformVersion(),
                 ownPackageId: tv.ownPackageId(),
+                duid: duid,
+                signing: shortSigning(),
                 devInfo: info,
                 devInfoError: r.devInfoError,
                 sdbReady: !!(info && info.devModeEnabled && info.hostIsLocal),
-                lanUrl: info && info.ip ? 'http://' + info.ip + ':' + port + '/' : null,
-                port: port,
+                lanUrl: info && info.ip ? 'http://' + info.ip + ':' + boundPort() + '/' : null,
+                port: boundPort(),
                 busy: state.busy,
                 current: state.current,
                 lastResult: state.lastResult,
@@ -179,12 +234,19 @@ function createInstallerServer(options) {
         });
     }
 
-    // ---- install pipeline --------------------------------------------------
-
-    function platformMajor() {
-        var v = tv.platformVersion();
-        return v ? Number(String(v).split('.')[0]) : null;
+    // What the TV screen needs; the full description is behind the PIN at /api/cert.
+    function shortSigning() {
+        var s = signing.summary(duid);
+        if (!s.configured) return { configured: false, storage: s.storage };
+        return { configured: true, error: s.error || null, name: s.author ? s.author.name : null, coversThisTv: s.coversThisTv === undefined ? null : s.coversThisTv };
     }
+
+    function boundPort() {
+        var addr = server.address();
+        return addr ? addr.port : port;
+    }
+
+    // ---- install pipeline --------------------------------------------------
 
     function installBuffer(buffer, source, force) {
         if (state.busy) {
@@ -196,6 +258,11 @@ function createInstallerServer(options) {
         state.current = { what: 'install', source: source, step: 'starting', packageId: null };
         var info;
         var filePath;
+        // Taken once, so replacing or removing the certificate meanwhile doesn't affect this install.
+        var keys = null;
+        var keysError = null;
+        try { keys = signing.load(); } catch (e) { keysError = e; }
+        var resign = !!keys;
         log('Install requested from ' + source + ' (' + Math.round(buffer.length / 1024) + ' KB)');
 
         return pkg.inspectPackage(buffer).then(function (i) {
@@ -206,15 +273,19 @@ function createInstallerServer(options) {
             if (!sdb.PKG_ID_RE.test(info.packageId)) {
                 throw new Error('Package id "' + info.packageId + '" is not a valid 10-character Tizen package id');
             }
-            if (!info.signed && !force) {
-                var e = new Error('Package is not signed. Sign it on your computer first (npm run sign -- file.wgt), or retry with "install anyway".');
+            if (keysError) {
+                throw new Error('The signing certificate on this TV cannot be opened (' + keysError.message + '). Upload it again, or remove it to install packages as they are.');
+            }
+            if (resign && buffer.length > MAX_RESIGN) {
+                var big = new Error('Re-signing on the TV is limited to ' + Math.round(MAX_RESIGN / 1048576) + ' MB of package. Sign this one on your computer (npm run sign) and install it with the certificate removed.');
+                big.status = 413;
+                throw big;
+            }
+            if (!info.signed && !force && !resign) {
+                var e = new Error('Package is not signed. Upload your signing certificate to the Installer (npm run push -- --cert), sign it on your computer (npm run sign -- file.wgt), or retry with "install anyway".');
                 e.status = 422;
                 e.code = 'UNSIGNED';
                 throw e;
-            }
-            var major = platformMajor();
-            if (major !== null && major >= 7) {
-                log('Note: Tizen ' + major + ' usually requires packages signed with a Samsung certificate for this TV.');
             }
             if (info.packageId === tv.ownPackageId()) {
                 log('This is an update of the Installer itself; it will restart when done.');
@@ -227,6 +298,10 @@ function createInstallerServer(options) {
                 e.status = 412;
                 throw e;
             }
+            if (!resign) return null;
+            step('Signing with your certificate...');
+            return signing.signPackage(buffer, keys).then(function (signed) { buffer = signed; });
+        }).then(function () {
             mkdirp(tmpDir);
             filePath = path.join(tmpDir, 'tbox-' + info.packageId + '.' + info.type);
             fs.writeFileSync(filePath, buffer);
@@ -240,6 +315,23 @@ function createInstallerServer(options) {
                 }
             });
         }).then(function (result) {
+            if (result.ok || !CERT_ERROR_RE.test(result.output)) return result;
+            if (AUTHOR_MISMATCH_RE.test(result.output)) {
+                result.hint = (info.name || info.packageId) + ' is already installed with a different author certificate. ' +
+                    'Uninstall it first, then install it again.';
+                return result;
+            }
+            return readDuid().then(function (id) {
+                var tvId = id ? ' ' + id : '';
+                result.hint = (resign
+                    ? 'The TV rejected the package signed with your certificate. Check that its distributor certificate lists this TV\'s DUID' + tvId +
+                      ' (npm run cert -- add-tv), then upload it again (npm run push -- --cert).'
+                    : 'This TV only installs packages signed with a Samsung distributor certificate that lists its DUID' + tvId +
+                      '. Upload yours to the Installer (npm run push -- --cert) and it signs every package for you.') +
+                    ' If the app is already installed with a different author certificate, uninstall it first.';
+                return result;
+            });
+        }).then(function (result) {
             try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
             var summary = {
                 ok: result.ok,
@@ -247,10 +339,13 @@ function createInstallerServer(options) {
                 packageId: info.packageId,
                 name: info.name,
                 version: info.version,
+                error: result.ok ? null : failureReason(result.output),
                 output: result.output,
+                hint: result.hint,
                 at: new Date().toISOString()
             };
             log(result.ok ? 'Installed ' + info.packageId + ' successfully.' : 'Install of ' + info.packageId + ' failed (see output above).');
+            if (result.hint) log(result.hint);
             state.lastResult = summary;
             state.busy = false;
             state.current = null;
@@ -289,16 +384,20 @@ function createInstallerServer(options) {
         });
     }
 
-    function uninstallPackage(packageId) {
+    // appId: PKG.App, which vd_appuninstall needs (a bare package id fails).
+    function uninstallApp(appId) {
+        var packageId = appId.split('.')[0];
         if (state.busy) return Promise.reject(Object.assign(new Error('Another operation is in progress'), { status: 409 }));
         if (packageId === tv.ownPackageId()) {
             return Promise.reject(Object.assign(new Error('The Installer cannot uninstall itself; use the TV settings.'), { status: 400 }));
         }
         state.busy = true;
         state.current = { what: 'uninstall', packageId: packageId, step: 'starting' };
-        step('Uninstalling ' + packageId + '...');
+        step('Uninstalling ' + appId + '...');
         return Promise.resolve().then(function () {
-            return sdb.uninstall(packageId, {
+            return sdb.uninstall(appId, {
+                // Below the TV UI's 120 s request timeout, so its answer arrives first.
+                timeoutMs: 90000,
                 port: sdbOpts.port,
                 host: sdbOpts.host,
                 onOutput: function (text) {
@@ -307,14 +406,15 @@ function createInstallerServer(options) {
                 }
             });
         }).then(function (result) {
-            log(result.ok ? 'Uninstalled ' + packageId + '.' : 'Uninstall of ' + packageId + ' may have failed (see output).');
-            state.lastResult = { ok: result.ok, action: 'uninstall', packageId: packageId, output: result.output, at: new Date().toISOString() };
+            var error = result.ok ? null : failureReason(result.output);
+            log(result.ok ? 'Uninstalled ' + appId + '.' : 'Uninstall of ' + appId + ' failed: ' + error);
+            state.lastResult = { ok: result.ok, action: 'uninstall', packageId: packageId, appId: appId, error: error, output: result.output, at: new Date().toISOString() };
             state.busy = false;
             state.current = null;
             return state.lastResult;
         }, function (err) {
             log('Error: ' + err.message);
-            state.lastResult = { ok: false, action: 'uninstall', packageId: packageId, error: err.message, at: new Date().toISOString() };
+            state.lastResult = { ok: false, action: 'uninstall', packageId: packageId, appId: appId, error: err.message, at: new Date().toISOString() };
             state.busy = false;
             state.current = null;
             throw err;
@@ -330,16 +430,28 @@ function createInstallerServer(options) {
         });
     }
 
+    // Each distinct Origin header seen on loopback requests, logged once, so
+    // what the TV UI sends shows up in the log (see isLocalApp).
+    var seenLocalOrigins = {};
+
     function handle(req, res) {
         var local = isLocalApp(req);
-        res._cors = local;
+        if (isLoopback(req.socket.remoteAddress)) {
+            var originKey = String(req.headers.origin);
+            if (!seenLocalOrigins[originKey]) {
+                seenLocalOrigins[originKey] = true;
+                log('Loopback request with Origin: ' + (req.headers.origin === undefined ? '(none)' : JSON.stringify(req.headers.origin)) +
+                    (local ? ' (treated as the TV UI)' : ' (needs the PIN)'));
+            }
+        }
+        res._cors = allowsCors(req);
         var urlPath = req.url.split('?')[0];
         var query = req.url.indexOf('?') !== -1 ? req.url.slice(req.url.indexOf('?') + 1) : '';
         var force = /(^|&)force=1(&|$)/.test(query);
 
         if (req.method === 'OPTIONS') {
             var h = { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-PIN', 'Access-Control-Max-Age': '600' };
-            if (local) h['Access-Control-Allow-Origin'] = '*';
+            if (res._cors) h['Access-Control-Allow-Origin'] = '*';
             res.writeHead(204, h);
             return res.end();
         }
@@ -370,14 +482,41 @@ function createInstallerServer(options) {
             p = readJson(req).then(function (body) { return installFromUrl(body.url, force || body.force === true); });
         } else if (req.method === 'POST' && urlPath === '/api/uninstall') {
             p = readJson(req).then(function (body) {
-                if (!sdb.PKG_ID_RE.test(String(body.packageId || ''))) throw Object.assign(new Error('Invalid packageId'), { status: 400 });
-                return uninstallPackage(body.packageId);
+                if (typeof body.appId === 'string' && sdb.APP_ID_RE.test(body.appId)) return uninstallApp(body.appId);
+                if (typeof body.packageId !== 'string' || !sdb.PKG_ID_RE.test(body.packageId)) throw Object.assign(new Error('Invalid appId'), { status: 400 });
+                // Older clients send the package id; uninstall goes by an app of it.
+                return tv.listApps().then(function (apps) {
+                    for (var i = 0; i < apps.length; i++) if (apps[i].packageId === body.packageId) return uninstallApp(apps[i].id);
+                    throw Object.assign(new Error('No installed app in package ' + body.packageId), { status: 404 });
+                });
             });
+        } else if (req.method === 'GET' && urlPath === '/api/cert') {
+            p = readDuid().then(function (id) { return signing.summary(id); });
+        } else if (req.method === 'POST' && urlPath === '/api/cert') {
+            p = readJson(req, 256 * 1024).then(function (body) {
+                return readDuid().then(function (id) {
+                    var s = signing.save(body, id);
+                    log('Signing certificate saved: ' + s.author.name + ' / ' + s.distributor.name + ' (TVs: ' + (s.distributor.duids.join(', ') || 'none') + ')');
+                    for (var w = 0; w < s.warnings.length; w++) log('Warning: ' + s.warnings[w]);
+                    return s;
+                });
+            });
+        } else if (req.method === 'POST' && urlPath === '/api/cert/remove') {
+            req.resume();
+            signing.remove();
+            log('Signing certificate removed; packages are installed as they are.');
+            p = Promise.resolve({ ok: true });
         } else if (req.method === 'POST' && urlPath === '/api/launch') {
             p = readJson(req).then(function (body) {
                 if (!sdb.APP_ID_RE.test(String(body.appId || ''))) throw Object.assign(new Error('Invalid appId'), { status: 400 });
-                log('Launching ' + body.appId);
-                return tv.launch(body.appId).then(function () { return { ok: true }; });
+                log('Opening ' + body.appId + '...');
+                return tv.launch(body.appId).then(function () {
+                    log('Opened ' + body.appId + '.');
+                    return { ok: true };
+                }, function (err) {
+                    log('Could not open ' + body.appId + ': ' + err.message);
+                    throw err;
+                });
             });
         } else {
             req.resume();
@@ -410,6 +549,7 @@ function createInstallerServer(options) {
             });
             server.listen(port, host || '0.0.0.0', function () {
                 log('Installer service v' + VERSION + ' listening on port ' + server.address().port);
+                log(signing.dir ? 'Signing certificate storage: ' + signing.dir : 'Found no private storage for a signing certificate; packages are installed as they are.');
                 if (cb) cb(server.address().port);
             });
             return server;

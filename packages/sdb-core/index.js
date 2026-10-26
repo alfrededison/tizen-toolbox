@@ -370,10 +370,12 @@ function install(packagePath, packageId, opts) {
     });
 }
 
-function uninstall(packageId, opts) {
-    assertMatch(packageId, PKG_ID_RE, 'package id');
+// Takes an app id (PKG.App): the TV's vd_appuninstall answers "was get app
+// info failed" when given a bare package id. A package id is still accepted.
+function uninstall(appId, opts) {
+    if (!APP_ID_RE.test(String(appId))) assertMatch(appId, PKG_ID_RE, 'app id');
     opts = opts || {};
-    return shell('0 vd_appuninstall ' + packageId, {
+    return shell('0 vd_appuninstall ' + appId, {
         timeoutMs: opts.timeoutMs || 120000,
         doneWhen: /spend time/i,
         onOutput: opts.onOutput,

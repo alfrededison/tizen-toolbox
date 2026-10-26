@@ -33,7 +33,10 @@
   .tablewrap { overflow:auto; max-height:420px; }
   pre { background:#0b0d11; border:1px solid var(--line); border-radius:8px; padding:10px; max-height:260px; overflow:auto; font-size:12px; margin:0; white-space:pre-wrap; word-break:break-word; }
   #msg { min-height: 1.4em; }
+  #appsMsg { margin:0 0 8px; min-height:1.4em; }
   label.chk { color:var(--muted); font-size:13px; display:flex; gap:6px; align-items:center; }
+  label.file { color:var(--muted); font-size:13px; display:flex; flex-direction:column; gap:4px; flex:1 1 220px; min-width:0; }
+  #certInfo { margin:0 0 10px; }
 </style>
 </head>
 <body>
@@ -70,8 +73,24 @@
   </section>
 
   <section class="card">
+    <h2>Signing certificate</h2>
+    <p id="certInfo">Enter the PIN to see it.</p>
+    <div class="row">
+      <label class="file">Author .p12 <input id="certAuthor" type="file" accept=".p12"></label>
+      <label class="file">Distributor .p12 <input id="certDistributor" type="file" accept=".p12"></label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="certPassword" type="password" placeholder="Certificate password" autocomplete="off">
+      <button id="certUpload" class="primary">Upload</button>
+      <button id="certRemove" class="danger" disabled>Remove</button>
+    </div>
+    <p id="certMsg"></p>
+  </section>
+
+  <section class="card">
     <h2>Apps</h2>
     <div class="row" style="margin-bottom:8px"><button id="refreshApps">Refresh</button></div>
+    <p id="appsMsg"></p>
     <div class="tablewrap"><table id="apps"><tbody><tr><td>Enter the PIN to list apps.</td></tr></tbody></table></div>
   </section>
 
@@ -111,6 +130,7 @@
     if (!pin) { m.textContent = 'Enter the PIN shown on the TV'; m.className = 'bad'; return; }
     m.textContent = 'Checking…'; m.className = '';
     $('savePin').disabled = true;
+    loadCert();
     loadApps().then(function (err) {
       $('savePin').disabled = false;
       m.textContent = err ? err.message : '✓ Saved';
@@ -122,7 +142,7 @@
 
   function handleResult(res) {
     if (res.ok) setMsg('Done: ' + (res.name || res.packageId) + ' ' + (res.version || ''), 'ok');
-    else setMsg('Failed: ' + (res.error || 'see log'), 'bad');
+    else setMsg('Failed: ' + (res.error ? res.error + '. ' : '') + (res.hint || (res.error ? '' : 'see log')), 'bad');
     loadApps();
   }
 
@@ -163,8 +183,8 @@
       var rows = res.apps.map(function (a) {
         return '<tr><td>' + esc(a.name) + '<br><span class="id">' + esc(a.id) + '</span></td>' +
           '<td class="ver">' + esc(a.version) + '</td>' +
-          '<td class="actions"><button data-launch="' + esc(a.id) + '">Open</button> ' +
-          '<button class="danger" data-uninstall="' + esc(a.packageId) + '" data-name="' + esc(a.name) + '">Uninstall</button></td></tr>';
+          '<td class="actions"><button data-launch="' + esc(a.id) + '" data-name="' + esc(a.name) + '">Open</button> ' +
+          '<button class="danger" data-uninstall="' + esc(a.id) + '" data-name="' + esc(a.name) + '">Uninstall</button></td></tr>';
       });
       $('apps').innerHTML = '<tbody>' + (rows.join('') || '<tr><td>No apps reported.</td></tr>') + '</tbody>';
       return null;
@@ -177,15 +197,82 @@
 
   $('apps').onclick = function (e) {
     var t = e.target;
+    var name = t.dataset.name;
     if (t.dataset.launch) {
+      setAppsMsg('Opening ' + name + ' on the TV…');
+      t.disabled = true;
       api('/api/launch', { method: 'POST', body: JSON.stringify({ appId: t.dataset.launch }), headers: { 'Content-Type': 'application/json' } })
-        .then(function () { setMsg('Opened ' + t.dataset.launch, 'ok'); }, handleError);
+        .then(function () { setAppsMsg('Opened ' + name + '.', 'ok'); }, function (e) { setAppsMsg('Could not open ' + name + ': ' + e.message, 'bad'); })
+        .then(function () { t.disabled = false; });
     } else if (t.dataset.uninstall) {
-      if (!confirm('Uninstall ' + t.dataset.name + ' (' + t.dataset.uninstall + ')?')) return;
-      setMsg('Uninstalling…');
-      api('/api/uninstall', { method: 'POST', body: JSON.stringify({ packageId: t.dataset.uninstall }), headers: { 'Content-Type': 'application/json' } })
-        .then(handleResult, handleError);
+      if (!confirm('Uninstall ' + name + ' (' + t.dataset.uninstall + ')?')) return;
+      setAppsMsg('Uninstalling ' + name + '…');
+      t.disabled = true;
+      api('/api/uninstall', { method: 'POST', body: JSON.stringify({ appId: t.dataset.uninstall }), headers: { 'Content-Type': 'application/json' } })
+        .then(function (res) {
+          if (res.ok) setAppsMsg('Uninstalled ' + name + '.', 'ok');
+          else setAppsMsg('Could not uninstall ' + name + ': ' + (res.error || 'see the log'), 'bad');
+        }, function (e) { setAppsMsg('Could not uninstall ' + name + ': ' + e.message, 'bad'); })
+        .then(function () { t.disabled = false; loadApps(); });
     }
+  };
+
+  function setAppsMsg(text, kind) {
+    $('appsMsg').textContent = text || '';
+    $('appsMsg').className = kind || '';
+  }
+
+  function setCertMsg(text, kind) {
+    $('certMsg').textContent = text || '';
+    $('certMsg').className = kind || '';
+  }
+
+  function showCert(s) {
+    var el = $('certInfo');
+    $('certRemove').disabled = !s.configured;
+    if (!s.configured) {
+      el.innerHTML = s.storage === false
+        ? '<span class="bad">This TV has no private storage for a certificate.</span>'
+        : 'None: packages are installed as they are, so this TV only accepts ones already signed for it. Upload yours below, or run <code>npm run push -- --cert</code>.';
+      return;
+    }
+    if (s.error) { el.innerHTML = '<span class="bad">' + esc(s.error) + '</span>'; return; }
+    var tvs = s.distributor.duids.join(', ') || 'none';
+    el.innerHTML = 'Every install is signed with <b>' + esc(s.author.name) + '</b> (expires ' + esc(s.author.expires.slice(0, 10)) + '). TVs: ' + esc(tvs) + ' ' +
+      (s.coversThisTv === false ? '<span class="bad">(not this TV)</span>' : s.coversThisTv ? '<span class="ok">✓ includes this TV</span>' : '');
+  }
+
+  function loadCert() {
+    if (!pin) return;
+    api('/api/cert').then(showCert, function (e) { $('certInfo').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; });
+  }
+
+  // FileReader rather than file.arrayBuffer(), which old TV browsers lack.
+  function fileBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result).replace(/^data:[^,]*,/, '')); };
+      r.onerror = function () { reject(new Error('Cannot read ' + file.name)); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  $('certUpload').onclick = function () {
+    var a = $('certAuthor').files[0], d = $('certDistributor').files[0], pw = $('certPassword').value;
+    if (!a || !d || !pw) return setCertMsg('Choose both .p12 files and enter their password.', 'bad');
+    setCertMsg('Uploading…');
+    Promise.all([fileBase64(a), fileBase64(d)]).then(function (files) {
+      return api('/api/cert', { method: 'POST', body: JSON.stringify({ author: files[0], distributor: files[1], password: pw }), headers: { 'Content-Type': 'application/json' } });
+    }).then(function (s) {
+      $('certPassword').value = '';
+      showCert(s);
+      setCertMsg(s.warnings && s.warnings.length ? s.warnings.join(' ') : 'Saved. Every install is now signed with it.', s.warnings && s.warnings.length ? 'bad' : 'ok');
+    }, function (e) { setCertMsg(e.message, 'bad'); });
+  };
+
+  $('certRemove').onclick = function () {
+    if (!confirm('Remove the signing certificate from the TV? Packages will then be installed as they are.')) return;
+    api('/api/cert/remove', { method: 'POST' }).then(function () { setCertMsg('Removed.', 'ok'); loadCert(); }, function (e) { setCertMsg(e.message, 'bad'); });
   };
 
   function yesNo(v) { return v ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'; }
@@ -198,6 +285,7 @@
       html += '<dt>Developer mode</dt><dd>' + yesNo(d.devModeEnabled) + '</dd>';
       html += '<dt>Host PC IP</dt><dd>' + esc(d.hostIp || '?') + ' ' + (d.hostIsLocal ? '<span class="ok">✓</span>' : '<span class="bad">(must be 127.0.0.1)</span>') + '</dd>';
       html += '<dt>Busy</dt><dd>' + (s.busy ? esc((s.current && s.current.step) || 'working') : 'idle') + '</dd>';
+      html += '<dt>DUID</dt><dd>' + esc(s.duid || 'unknown until Host PC IP is 127.0.0.1') + '</dd>';
       html += '<dt>Installer</dt><dd>v' + esc(s.version) + '</dd>';
       $('status').innerHTML = html;
       $('log').textContent = s.log.map(function (l) { return l.t.slice(11, 19) + '  ' + l.msg; }).join('\n');
@@ -209,6 +297,7 @@
   poll();
   setInterval(poll, 2000);
   loadApps();
+  loadCert();
 })();
 </script>
 </body>
