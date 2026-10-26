@@ -7,6 +7,13 @@ This project is derived from, and builds on, work by Reis Can (reisxd):
   - TizenTube           https://github.com/reisxd/TizenTube           (GPL-3.0)
       DevTools-based userscript injection (planned for apps/ytmod)
   - tizen.js            https://github.com/reisxd/tizen.js            (GPL-3.0)
-      package signing (used as an optional build-time dependency)
+      package signing and Samsung certificate requests (used as an optional
+      build-time dependency); packages/tizen-sign is an ES5 port of its
+      Signature class, run on the TV
+
+Thanks also to Apps2Samsung (https://github.com/Apps2Samsung/Apps2Samsung),
+which showed that Samsung TVs need a Samsung-issued certificate listing the
+TV's DUID. `npm run cert -- import` reuses the certificates it creates; no
+Apps2Samsung code is included.
 
 The SDB packet format follows the public Android Debug Bridge protocol.

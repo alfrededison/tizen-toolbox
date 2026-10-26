@@ -14,16 +14,43 @@ Why: TizenBrew and TizenTube keep breaking, and keeping the host on 127.0.0.1 us
 
 ## One-time setup
 
-1. **Build** (on your computer, Node 18+):
+Samsung TVs only install packages whose **distributor certificate is issued by Samsung and lists the TV's DUID**; anything else fails with `Check certificate error : :Invalid signature …`. They also only accept an update signed with the **same author certificate** as the installed copy. So everything here is signed with one Samsung certificate kept in `certs/` (git-ignored). **Back up `certs/`**: if you lose it, every app signed with it has to be uninstalled before it can be updated.
+
+1. **Get the certificate** (on your computer, Node 18+):
    ```sh
    npm install
-   npm run build            # -> dist/installer.wgt (signed) or dist/installer-unsigned.wgt
+   npm run cert -- import                                    # reuse the one Apps2Samsung made, or
+   npm run cert -- add-tv <DUID> --email <your Samsung account email> --name "Your Name"
+   npm run cert                                              # shows what is in certs/
    ```
-2. **Install the Installer once** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (Developer Mode on, Host PC IP = your computer). Apps2Samsung re-signs the package, so the unsigned build is fine here.
-3. **Switch the TV to 127.0.0.1 for good:** Apps → press `1 2 3 4 5` → Developer Mode ON, Host PC IP `127.0.0.1` → OK → restart the TV (hold power until the logo).
-4. Open **TV Installer** on the TV. It shows three green checks, the LAN address (e.g. `http://192.168.1.20:8093`) and a 6-digit PIN.
+   - `import` copies `author.p12`, `distributor.p12` and `password.txt` from an [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) certificate folder (found automatically on macOS/Windows, or pass the folder). Apps already installed with Apps2Samsung keep updating, because the author certificate stays the same.
+   - `add-tv` signs in to your Samsung account (paste back the JSON the sign-in page shows) and asks Samsung for a distributor certificate for that DUID. Run it again with another DUID to add a TV; it keeps the TVs already listed, their privilege level (override with `--partner` / `--public`) and your author certificate. It refuses an author certificate that Samsung didn't issue; `--new-author` replaces it (apps signed with the old one then need uninstalling before they can be updated).
+   - The DUID is shown on the TV Installer screen once it runs, or get it with `sdb shell 0 getduid` (step 3).
+2. **Build:**
+   ```sh
+   npm run build -- installer   # -> dist/installer.wgt, "signed with certs/author.p12 + Samsung distributor …"
+   ```
+   If it prints `not signed: …` or mentions the Tizen public distributor, fix that first.
+3. **Point the TV at your computer:** Apps → press `1 2 3 4 5` → Developer Mode ON, Host PC IP = your computer's IP → OK → restart the TV (hold power until the logo).
+4. **Install `dist/installer.wgt` once from your computer** with `sdb` (from Tizen Studio or the Tizen VS Code extension):
+   ```sh
+   sdb connect 192.168.1.20                  # your TV's IP
+   sdb shell 0 getduid                       # the DUID for step 1, if you need it
+   sdb push dist/installer.wgt /home/owner/share/tmp/sdk_tools/installer.wgt
+   sdb shell 0 vd_appinstall TboxInst01 /home/owner/share/tmp/sdk_tools/installer.wgt
+   ```
+   It prints `install completed` when done. If it was installed before with a different author certificate, remove it first with `sdb shell 0 vd_appuninstall TboxInst01`.
+5. **Switch the TV to 127.0.0.1 for good:** Apps → `1 2 3 4 5` → Host PC IP `127.0.0.1` → OK → restart the TV.
+6. Open **TV Installer** on the TV. It shows its DUID, the LAN address (e.g. `http://192.168.1.20:8093`) and a 6-digit PIN.
+7. **Give the Installer your certificate**, so it can sign every package it installs:
+   ```sh
+   npm run push -- --cert --tv 192.168.1.20 --pin 123456
+   ```
+   (or upload `author.p12`, `distributor.p12` and the password in the browser page's *Signing certificate* card). The TV then shows four green checks, the last one *Signing: <your name>*.
 
 ## Installing apps after that
+
+Any `.wgt` / `.tpk` works, whoever built it: the Installer drops the package's own signatures and signs it with your certificate before installing.
 
 - **Browser:** open the address shown on the TV, enter the PIN, drop a `.wgt`, or paste a URL / `owner/repo` (installs that repo's latest GitHub release).
 - **Command line:**
@@ -35,20 +62,27 @@ Why: TizenBrew and TizenTube keep breaking, and keeping the host on 127.0.0.1 us
 
 The Installer's service starts at boot, so uploads work without opening the app — but the PIN changes on every TV restart, so open the app to read it.
 
-## Signing
+Re-signing means an app is installed under your author certificate. An app that is already on the TV with someone else's signature can't be updated that way: uninstall it once, then install it through the Installer.
 
-On Tizen ≤ 6.5 (2021–2022 TVs), `vd_appinstall` accepts packages signed with any author certificate plus the Tizen **public** distributor certificate. The build signs automatically when it finds your certificate:
+## Updating the Installer
+
+Build a new version (signed with the same `certs/`) and push it to the running Installer:
 
 ```sh
-export TIZEN_AUTHOR_KEY=~/path/to/author.p12     # default: certs/author.p12
-export TIZEN_AUTHOR_KEY_PW=...
-npm run build
-npm run sign -- some-app.wgt                     # re-sign any package
+npm run bump:installer -- patch      # or minor / major / x.y.z
+npm run build -- installer
+npm run push -- dist/installer.wgt
 ```
 
-The distributor certificate comes from the Tizen SDK bundle that [tizen.js](https://github.com/reisxd/tizen.js) downloads into `~/share/.tizen-cert` (override with `TIZEN_DISTRIBUTOR_KEY` / `TIZEN_DISTRIBUTOR_KEY_PW`). The Installer refuses unsigned uploads unless you tick "install anyway".
+The GitHub release workflow signs with the `TIZEN_AUTHOR_KEY_B64`, `TIZEN_DISTRIBUTOR_KEY_B64` and `TIZEN_AUTHOR_KEY_PW` secrets (`base64 -i certs/author.p12`, `base64 -i certs/distributor.p12`, the contents of `certs/password.txt`). Release builds then install only on the TVs your distributor certificate lists.
 
-Tizen 7+ (2023+) TVs need a Samsung certificate tied to the TV's DUID; that flow (from TizenBrewInstaller) is not ported yet.
+## Signing
+
+On the TV, the Installer keeps your certificate (uploaded with `npm run push -- --cert` or the browser page) in its private storage and signs every package with it (`packages/tizen-sign`, an ES5 port of tizen.js's signer). The API only ever returns a description of it, never the files or the password; uploading it sends the files and password over your home network unencrypted, like the PIN. Remove it from the browser page to install packages exactly as they are. Re-signing on the TV is limited to packages of 100 MB.
+
+On your computer, `npm run build` and `npm run sign` use `certs/author.p12`, `certs/distributor.p12` and `certs/password.txt` (see [One-time setup](#one-time-setup)); `npm run sign -- some-app.wgt` signs a package without the Installer. Without `certs/distributor.p12` the build falls back to the Tizen public distributor, which Samsung TVs reject. Env overrides: `TIZEN_AUTHOR_KEY`, `TIZEN_AUTHOR_KEY_PW`, `TIZEN_DISTRIBUTOR_KEY`, `TIZEN_DISTRIBUTOR_KEY_PW`.
+
+When an install fails with the certificate error, the Installer says which DUID the certificate must list. Without a certificate on the TV, it refuses unsigned uploads unless you tick "install anyway".
 
 ## How it works
 
@@ -77,7 +111,9 @@ npm run build -- installer    # build one app
 - `vd_appuninstall` output format and exit text (install output is well known; uninstall is assumed to be similar).
 - Whether the service's `on-boot` auto-start works with public-level signing.
 - Whether the Installer can update itself in place (the install runs in sdbd, so it should survive the app being restarted).
+- Where the service can keep the signing certificate: it tries `/home/owner/apps_rw/TboxInst01/data` and logs the folder it uses at startup.
+- How long re-signing a large package takes on the TV's CPU.
 
 ## Credits & license
 
-GPL-3.0-only. Builds on ideas and protocol knowledge from [TizenBrew / TizenBrewInstaller](https://github.com/reisxd/TizenBrewInstaller), [TizenTube](https://github.com/reisxd/TizenTube) and [tizen.js](https://github.com/reisxd/tizen.js) by Reis Can (all GPL-3.0). See `NOTICE`.
+GPL-3.0-only. Builds on ideas and protocol knowledge from [TizenBrew / TizenBrewInstaller](https://github.com/reisxd/TizenBrewInstaller), [TizenTube](https://github.com/reisxd/TizenTube) and [tizen.js](https://github.com/reisxd/tizen.js) by Reis Can (all GPL-3.0). Thanks to [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung), which showed that Samsung TVs need a Samsung certificate for their DUID; `npm run cert -- import` reuses the certificates it creates. See `NOTICE`.
