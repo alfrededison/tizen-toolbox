@@ -11,7 +11,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const net = require('net');
 const { spawn } = require('child_process');
 const { startFakeSdbd } = require('./fake-sdbd');
 const storeLib = require('../apps/ytmod/service/lib/store');
@@ -26,8 +25,31 @@ const CANDIDATES = [
 ].filter(Boolean);
 const CHROME = CANDIDATES.find((p) => fs.existsSync(p));
 
-function freePort() {
-    return new Promise((r) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+// Starts Chrome with a DevTools port chosen by Chrome itself and resolves
+// with that port once Chrome prints "DevTools listening on ws://...". Resolves
+// null (with Chrome's output) if it can't start, so the test is skipped
+// instead of failing on a CI runner where Chrome won't launch.
+function launchChrome(t) {
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-'));
+    const chrome = spawn(CHROME, [
+        '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+        '--no-first-run', '--no-default-browser-check', '--disable-extensions',
+        '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0',
+        `--user-data-dir=${profile}`, 'about:blank'
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+    t.after(() => { chrome.kill('SIGKILL'); });
+    return new Promise((resolve) => {
+        let err = '';
+        const done = (port) => { clearTimeout(timer); resolve({ port, output: err.slice(-2000) }); };
+        const timer = setTimeout(() => done(null), 30000);
+        chrome.stderr.on('data', (c) => {
+            err += c;
+            const m = /DevTools listening on ws:\/\/[^:]+:(\d+)\//.exec(err);
+            if (m) done(Number(m[1]));
+        });
+        chrome.on('error', (e) => { err += String(e); done(null); });
+        chrome.on('exit', (code) => { err += `\n(exited with ${code})`; done(null); });
+    });
 }
 
 // /tv: a head script that blocks for a moment, so the first execution context
@@ -49,9 +71,13 @@ function startDevApi() {
 }
 
 async function runWith(t, scriptCode) {
-    const port = await freePort();
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-'));
-    const chrome = spawn(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
+    const launched = await launchChrome(t);
+    if (!launched.port) {
+        t.diagnostic('Chrome did not start: ' + launched.output);
+        t.skip('Chrome could not be started here');
+        return null;
+    }
+    const port = launched.port;
     const site = await startSite();
     const devApi = await startDevApi();
     const sdbd = await startFakeSdbd([[/^0 debug /, `launched with debug port: ${port}\n`]], { keepOpen: true });
@@ -68,7 +94,7 @@ async function runWith(t, scriptCode) {
         devtoolsTimeoutMs: 15000,
         quiet: true
     });
-    t.after(async () => { inj.reset(); chrome.kill(); await site.close(); await devApi.close(); await sdbd.close(); });
+    t.after(async () => { inj.reset(); await site.close(); await devApi.close(); await sdbd.close(); });
     await inj.prepare();
     await inj.launchDebug();
     const end = Date.now() + 15000;
@@ -78,12 +104,14 @@ async function runWith(t, scriptCode) {
 
 test('userscript that observes document.body at load runs once <body> exists', { skip: !CHROME && 'no Chromium found' }, async (t) => {
     const inj = await runWith(t, '!function(){"use strict";new MutationObserver(function(){}).observe(document.body,{childList:true});window.ttLoaded=document.getElementById("app").textContent}();');
+    if (!inj) return;
     assert.strictEqual(inj.state.phase, 'running', JSON.stringify(inj.state.steps) + '\n' + inj.state.log.map((l) => l.msg).join('\n'));
     assert.strictEqual(inj.state.steps.find((s) => s.key === 'inject').status, 'ok');
 });
 
 test('an error thrown by the userscript is reported with its message', { skip: !CHROME && 'no Chromium found' }, async (t) => {
     const inj = await runWith(t, '!function(){throw new TypeError("boom from userscript")}();');
+    if (!inj) return;
     assert.strictEqual(inj.state.phase, 'error');
     assert.match(inj.state.error, /Userscript threw: TypeError: boom from userscript/);
 });
