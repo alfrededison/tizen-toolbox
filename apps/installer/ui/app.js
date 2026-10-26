@@ -105,18 +105,30 @@
             box.innerHTML = '<div class="appRow">No apps listed yet</div>';
             return;
         }
-        // Show a window of rows around the focused one.
-        var visible = 9;
-        var start = Math.max(0, Math.min(focusIndex - 4, apps.length - visible));
         var html = '';
-        for (var i = start; i < Math.min(apps.length, start + visible); i++) {
+        for (var i = 0; i < apps.length; i++) {
             var a = apps[i];
-            html += '<div class="appRow' + (i === focusIndex ? ' focus' : '') + '">' +
-                '<span>' + esc(a.name) + ' <span class="id">' + esc(a.version) + '</span></span>' +
-                '<span class="id">' + esc(a.id) + '</span></div>';
+            // While the action bar is open the bar gets the strong highlight, the row a muted one.
+            var cls = i !== focusIndex ? '' : actionMode ? ' picked' : ' focus';
+            html += '<div class="appRow' + cls + '">' +
+                '<span class="name">' + esc(a.name) + '<span class="id">' + esc(a.id) + '</span></span>' +
+                '<span class="ver">' + esc(a.version) + '</span></div>';
         }
         box.innerHTML = html;
         renderActions();
+        scrollToFocus(box);
+    }
+
+    // Keeps the focused row inside the list box (its height depends on the setup
+    // warning and the action bar), with one neighbouring row visible when possible.
+    function scrollToFocus(box) {
+        var row = box.children[focusIndex];
+        if (!row) return;
+        var pad = row.offsetHeight;
+        var top = row.offsetTop - pad;
+        var bottom = row.offsetTop + row.offsetHeight + pad;
+        if (top < box.scrollTop) box.scrollTop = Math.max(0, top);
+        else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight;
     }
 
     function renderActions() {

@@ -26,9 +26,11 @@
   .ok { color:var(--ok); } .bad { color:var(--bad); }
   table { width:100%; border-collapse: collapse; font-size:14px; }
   td { padding:7px 4px; border-top:1px solid var(--line); vertical-align: middle; }
-  td.id { color:var(--muted); font-family: ui-monospace, Menlo, monospace; font-size:12px; word-break: break-all; }
+  td .id { color:var(--muted); font-family: ui-monospace, Menlo, monospace; font-size:12px; word-break: break-all; }
+  #apps td:first-child { width:100%; }
+  td.ver { color:var(--muted); text-align:right; white-space:nowrap; padding-right:12px; }
   td.actions { text-align:right; white-space:nowrap; }
-  .tablewrap { overflow-x:auto; }
+  .tablewrap { overflow:auto; max-height:420px; }
   pre { background:#0b0d11; border:1px solid var(--line); border-radius:8px; padding:10px; max-height:260px; overflow:auto; font-size:12px; margin:0; white-space:pre-wrap; word-break:break-word; }
   #msg { min-height: 1.4em; }
   label.chk { color:var(--muted); font-size:13px; display:flex; gap:6px; align-items:center; }
@@ -43,6 +45,7 @@
     <div class="row">
       <input id="pin" type="password" inputmode="numeric" placeholder="6-digit PIN shown on the TV" autocomplete="off">
       <button id="savePin">Save</button>
+      <span id="pinMsg"></span>
     </div>
   </section>
 
@@ -104,7 +107,15 @@
   $('savePin').onclick = function () {
     pin = $('pin').value.trim();
     try { localStorage.setItem('tboxPin', pin); } catch (e) {}
-    loadApps();
+    var m = $('pinMsg');
+    if (!pin) { m.textContent = 'Enter the PIN shown on the TV'; m.className = 'bad'; return; }
+    m.textContent = 'Checking…'; m.className = '';
+    $('savePin').disabled = true;
+    loadApps().then(function (err) {
+      $('savePin').disabled = false;
+      m.textContent = err ? err.message : '✓ Saved';
+      m.className = err ? 'bad' : 'ok';
+    });
   };
 
   function forceQuery() { return $('force').checked ? '?force=1' : ''; }
@@ -145,21 +156,24 @@
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
+  // Resolves with the error, or null once the list is shown.
   function loadApps() {
-    if (!pin) return;
-    api('/api/apps').then(function (res) {
+    if (!pin) return Promise.resolve(null);
+    return api('/api/apps').then(function (res) {
       var rows = res.apps.map(function (a) {
-        return '<tr><td>' + esc(a.name) + '<br><small>' + esc(a.version) + '</small></td>' +
-          '<td class="id">' + esc(a.id) + '</td>' +
+        return '<tr><td>' + esc(a.name) + '<br><span class="id">' + esc(a.id) + '</span></td>' +
+          '<td class="ver">' + esc(a.version) + '</td>' +
           '<td class="actions"><button data-launch="' + esc(a.id) + '">Open</button> ' +
           '<button class="danger" data-uninstall="' + esc(a.packageId) + '" data-name="' + esc(a.name) + '">Uninstall</button></td></tr>';
       });
       $('apps').innerHTML = '<tbody>' + (rows.join('') || '<tr><td>No apps reported.</td></tr>') + '</tbody>';
+      return null;
     }, function (e) {
       $('apps').innerHTML = '<tbody><tr><td class="bad">' + esc(e.message) + '</td></tr></tbody>';
+      return e;
     });
   }
-  $('refreshApps').onclick = loadApps;
+  $('refreshApps').onclick = function () { loadApps(); };
 
   $('apps').onclick = function (e) {
     var t = e.target;
