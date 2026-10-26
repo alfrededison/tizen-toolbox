@@ -17,12 +17,20 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm test
-      - name: Prepare author certificate (optional)
+      - name: Prepare certificates (optional)
         env:
           TIZEN_AUTHOR_KEY_B64: ${{ secrets.TIZEN_AUTHOR_KEY_B64 }}
+          TIZEN_DISTRIBUTOR_KEY_B64: ${{ secrets.TIZEN_DISTRIBUTOR_KEY_B64 }}
         run: |
+          mkdir -p certs
           if [ -n "$TIZEN_AUTHOR_KEY_B64" ]; then
-            mkdir -p certs && echo "$TIZEN_AUTHOR_KEY_B64" | base64 -d > certs/author.p12
+            echo "$TIZEN_AUTHOR_KEY_B64" | base64 -d > certs/author.p12
+          fi
+          if [ -n "$TIZEN_DISTRIBUTOR_KEY_B64" ]; then
+            echo "$TIZEN_DISTRIBUTOR_KEY_B64" | base64 -d > certs/distributor.p12
+          elif [ -n "$TIZEN_AUTHOR_KEY_B64" ]; then
+            echo "::error::TIZEN_AUTHOR_KEY_B64 is set but TIZEN_DISTRIBUTOR_KEY_B64 is not; Samsung TVs reject packages signed without a Samsung distributor certificate."
+            exit 1
           fi
       - name: Build
         env:

@@ -21,7 +21,7 @@ const ncc = require('@vercel/ncc');
 const babel = require('@babel/core');
 const acorn = require('acorn');
 const JSZip = require('jszip');
-const { signZipBuffer, whyCannotSign } = require('./lib/sign');
+const { signZipBuffer, whyCannotSign, describeSigning } = require('./lib/sign');
 
 const ROOT = path.resolve(__dirname, '..');
 const APPS_DIR = path.join(ROOT, 'apps');
@@ -126,7 +126,7 @@ async function buildApp(name) {
     } else {
         buffer = await signZipBuffer(buffer);
         outFile = path.join(DIST_DIR, `${name}.wgt`);
-        console.log('  signed (author + distributor)');
+        console.log('  signed with ' + describeSigning());
     }
     fs.writeFileSync(outFile, buffer);
     console.log(`  -> ${path.relative(ROOT, outFile)} (${(buffer.length / 1024).toFixed(0)} KB)`);
