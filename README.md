@@ -95,7 +95,7 @@ Releases are unsigned, so anyone can install them with their own certificate. To
 
 ## Signing
 
-On the TV, the Installer keeps your certificate (uploaded with `npm run push -- --cert` or the browser page) in its private storage and signs every package with it (`packages/tizen-sign`, an ES5 port of tizen.js's signer). The API only ever returns a description of it, never the files or the password; uploading it sends the files and password over your home network unencrypted, like the PIN. Remove it from the browser page to install packages exactly as they are. Re-signing on the TV is limited to packages of 100 MB.
+On the TV, the Installer keeps your certificate (uploaded with `npm run push -- --cert` or the browser page) in its private storage (`/home/owner/apps_rw/TboxInst01/data/signing`) and signs every package with it (`packages/tizen-sign`, an ES5 port of tizen.js's signer). The API only ever returns a description of it, never the files or the password; uploading it sends the files and password over your home network unencrypted, like the PIN. Remove it from the browser page to install packages exactly as they are. Re-signing on the TV is limited to packages of 100 MB.
 
 On your computer, `npm run build` and `npm run sign` use `certs/author.p12`, `certs/distributor.p12` and `certs/password.txt` (see [With your own certificate and sdb](#with-your-own-certificate-and-sdb)); `npm run sign -- some-app.wgt` signs a package without the Installer. Without `certs/distributor.p12` the build falls back to the Tizen public distributor, which Samsung TVs reject. Env overrides: `TIZEN_AUTHOR_KEY`, `TIZEN_AUTHOR_KEY_PW`, `TIZEN_DISTRIBUTOR_KEY`, `TIZEN_DISTRIBUTOR_KEY_PW`.
 
@@ -126,8 +126,6 @@ npm run build -- installer    # build one app
 ## Things still to verify on a real TV
 
 - Whether the service's `on-boot` auto-start works with public-level signing.
-- Whether the Installer can update itself in place (the install runs in sdbd, so it should survive the app being restarted).
-- Where the service can keep the signing certificate: it tries `/home/owner/apps_rw/TboxInst01/data` and logs the folder it uses at startup.
 - How long re-signing a large package takes on the TV's CPU.
 
 ## Credits & license
