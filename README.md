@@ -23,10 +23,11 @@ Download `installer-unsigned.wgt` from the [latest release](https://github.com/a
 1. Install `installer-unsigned.wgt` with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (Developer Mode ON, Host PC IP = your computer). It signs the package with the Samsung certificate it creates for your TV.
 2. **Switch the TV to 127.0.0.1 for good:** Apps → press `1 2 3 4 5` → Developer Mode ON, Host PC IP `127.0.0.1` → OK → restart the TV (hold power until the logo).
 3. Open **TV Installer** on the TV. It shows its DUID, the LAN address (e.g. `http://192.168.1.20:8093`) and a 6-digit PIN.
-4. **Give the Installer that same Apps2Samsung certificate.** Otherwise updates of the Installer, and of apps Apps2Samsung installed, are refused (`Author certificate not match`). Either open the LAN address in a browser and upload `author.p12`, `distributor.p12` and the password from `password.txt` in the *Signing certificate* card (they are in Apps2Samsung's `Certificate/<name> - Public` folder: `~/Library/Application Support/Apps2Samsung` on macOS, `%APPDATA%\Apps2Samsung` on Windows), or from a checkout of this repo:
+4. **Give the Installer that same Apps2Samsung certificate.** Otherwise updates of the Installer, and of apps Apps2Samsung installed, are refused (`Author certificate not match`). Either open the LAN address in a browser and upload `author.p12`, `distributor.p12` and the password from `password.txt` in the *Signing certificate* card, or from a checkout of this repo (see below).
+   Use the certificate Apps2Samsung signed with, the one chosen in its *Certificate* setting; its folders are under `Certificate/` in `~/Library/Application Support/Apps2Samsung` on macOS or `%APPDATA%\Apps2Samsung` on Windows. Each certificate there has its own author certificate, and the Installer warns when the uploaded one isn't the one it was installed with.
    ```sh
    npm install
-   npm run cert -- import                                    # copies it into certs/
+   npm run cert -- import                                    # copies the one Apps2Samsung signs with into certs/
    npm run push -- --cert --tv 192.168.1.20 --pin 123456
    ```
    The TV then shows four green checks, the last one `Signing: <name>`.
@@ -42,7 +43,7 @@ On your computer (Node 18+), from a checkout of this repo. The certificate lives
    npm run cert                                              # shows what is in certs/
    ```
    - `add-tv` signs in to your Samsung account (paste back the JSON the sign-in page shows) and asks Samsung for a distributor certificate for that DUID. Run it again with another DUID to add a TV; it keeps the TVs already listed, their privilege level (override with `--partner` / `--public`) and your author certificate. It refuses an author certificate that Samsung didn't issue; `--new-author` replaces it (apps signed with the old one then need uninstalling before they can be updated).
-   - `npm run cert -- import` copies an existing Apps2Samsung certificate instead (found automatically on macOS/Windows, or pass the folder).
+   - `npm run cert -- import` copies an existing Apps2Samsung certificate instead: the one its *Certificate* setting chooses, found automatically on macOS/Windows, or pass the folder.
    - Get the DUID with `sdb shell 0 getduid` (step 3).
 2. **Sign the package:**
    ```sh

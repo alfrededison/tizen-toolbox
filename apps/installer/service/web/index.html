@@ -258,8 +258,10 @@
     }
     if (s.error) { el.innerHTML = '<span class="bad">' + esc(s.error) + '</span>'; return; }
     var tvs = s.distributor.duids.join(', ') || 'none';
-    el.innerHTML = 'Every install is signed with <b>' + esc(s.author.name) + '</b> (expires ' + esc(s.author.expires.slice(0, 10)) + '). TVs: ' + esc(tvs) + ' ' +
-      (s.coversThisTv === false ? '<span class="bad">(not this TV)</span>' : s.coversThisTv ? '<span class="ok">✓ includes this TV</span>' : '');
+    el.innerHTML = 'Every install is signed with <b>' + esc(s.label) + '</b> (expires ' + esc(s.author.expires.slice(0, 10)) + '). TVs: ' + esc(tvs) + ' ' +
+      (s.coversThisTv === false ? '<span class="bad">(not this TV)</span>' : s.coversThisTv ? '<span class="ok">✓ includes this TV</span>' : '') +
+      (s.matchesInstaller === false ? '<br><span class="bad">Not the certificate the Installer was installed with, so the Installer can\'t update itself. ' +
+        'Upload that one (for Apps2Samsung: the folder chosen in its Certificate setting).</span>' : '');
   }
 
   function loadCert() {

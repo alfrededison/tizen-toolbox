@@ -147,10 +147,14 @@ function replaceFiles(writes) {
     if (fs.existsSync(FILES.password)) fs.chmodSync(FILES.password, 0o600);
 }
 
+function apps2SamsungHome() {
+    return process.platform === 'win32'
+        ? path.join(process.env.APPDATA || '', 'Apps2Samsung')
+        : path.join(os.homedir(), 'Library', 'Application Support', 'Apps2Samsung');
+}
+
 function apps2SamsungDirs() {
-    const base = process.platform === 'win32'
-        ? path.join(process.env.APPDATA || '', 'Apps2Samsung', 'Certificate')
-        : path.join(os.homedir(), 'Library', 'Application Support', 'Apps2Samsung', 'Certificate');
+    const base = path.join(apps2SamsungHome(), 'Certificate');
     try {
         return fs.readdirSync(base).map((d) => path.join(base, d)).filter((d) => fs.statSync(d).isDirectory());
     } catch (e) {
@@ -158,16 +162,31 @@ function apps2SamsungDirs() {
     }
 }
 
+// The certificate folder Apps2Samsung signs with (its "Certificate" setting).
+// Each of its certificate folders holds a different author certificate, and
+// updates must use the one an app was installed with.
+function apps2SamsungSelected() {
+    try {
+        // Strip a byte-order mark, which Windows tools may write first.
+        const settings = JSON.parse(fs.readFileSync(path.join(apps2SamsungHome(), 'settings.json'), 'utf8').replace(/^\uFEFF/, ''));
+        if (!settings.Certificate) return null;
+        const dir = path.join(apps2SamsungHome(), 'Certificate', settings.Certificate);
+        return fs.existsSync(dir) ? dir : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function importCert(lib, args) {
     let dir = args.positional[1];
     if (!dir) {
         const found = apps2SamsungDirs();
-        const pub = found.filter((d) => / - Public$/.test(d));
-        if (pub.length !== 1) {
+        dir = apps2SamsungSelected() || (found.length === 1 ? found[0] : null);
+        if (!dir) {
             throw new Error('Give the certificate folder: npm run cert -- import <dir>' +
                 (found.length ? '\nApps2Samsung certificates found:\n' + found.map((d) => '  ' + d).join('\n') : ''));
         }
-        dir = pub[0];
+        console.log(`Using the certificate Apps2Samsung signs with (${path.basename(dir)}); pass a folder to pick another.`);
     }
     const src = {
         author: path.join(dir, 'author.p12'),

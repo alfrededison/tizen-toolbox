@@ -93,8 +93,9 @@ function createInstallerServer(options) {
 
     // The user's signing certificate; when present, every package is re-signed
     // with it before installing (see signing.js).
-    var signing = signingLib.createSigningStore(options.signingDir !== undefined ? options.signingDir :
-        signingLib.findPrivateDir(signingLib.defaultCandidates(tv.ownPackageId())));
+    var signing = signingLib.createSigningStore(
+        options.signingDir !== undefined ? options.signingDir : signingLib.findPrivateDir(signingLib.defaultCandidates(tv.ownPackageId())),
+        options.ownSignatureFile !== undefined ? options.ownSignatureFile : signingLib.findOwnSignature(__dirname));
 
     // The TV's DUID, which a Samsung distributor certificate must list. Read
     // once over sdb (the REST API's "duid" is a different, UUID-style id).
@@ -238,7 +239,13 @@ function createInstallerServer(options) {
     function shortSigning() {
         var s = signing.summary(duid);
         if (!s.configured) return { configured: false, storage: s.storage };
-        return { configured: true, error: s.error || null, name: s.author ? s.author.name : null, coversThisTv: s.coversThisTv === undefined ? null : s.coversThisTv };
+        return {
+            configured: true,
+            error: s.error || null,
+            name: s.label || null,
+            coversThisTv: s.coversThisTv === undefined ? null : s.coversThisTv,
+            matchesInstaller: s.matchesInstaller === undefined ? null : s.matchesInstaller
+        };
     }
 
     function boundPort() {
@@ -317,8 +324,11 @@ function createInstallerServer(options) {
         }).then(function (result) {
             if (result.ok || !CERT_ERROR_RE.test(result.output)) return result;
             if (AUTHOR_MISMATCH_RE.test(result.output)) {
-                result.hint = (info.name || info.packageId) + ' is already installed with a different author certificate. ' +
-                    'Uninstall it first, then install it again.';
+                // Only blame the stored certificate when it isn't known to match the Installer's.
+                result.hint = info.packageId === tv.ownPackageId() && resign && signing.summary(null).matchesInstaller !== true
+                    ? 'The TV Installer was installed with a different author certificate than the one it signs with. Upload the certificate ' +
+                      'it was installed with (for Apps2Samsung, the folder chosen in its Certificate setting), then update again.'
+                    : (info.name || info.packageId) + ' is already installed with a different author certificate. Uninstall it first, then install it again.';
                 return result;
             }
             return readDuid().then(function (id) {
@@ -496,7 +506,7 @@ function createInstallerServer(options) {
             p = readJson(req, 256 * 1024).then(function (body) {
                 return readDuid().then(function (id) {
                     var s = signing.save(body, id);
-                    log('Signing certificate saved: ' + s.author.name + ' / ' + s.distributor.name + ' (TVs: ' + (s.distributor.duids.join(', ') || 'none') + ')');
+                    log('Signing certificate saved: ' + s.label + ' (TVs: ' + (s.distributor.duids.join(', ') || 'none') + ')');
                     for (var w = 0; w < s.warnings.length; w++) log('Warning: ' + s.warnings[w]);
                     return s;
                 });
@@ -550,6 +560,14 @@ function createInstallerServer(options) {
             server.listen(port, host || '0.0.0.0', function () {
                 log('Installer service v' + VERSION + ' listening on port ' + server.address().port);
                 log(signing.dir ? 'Signing certificate storage: ' + signing.dir : 'Found no private storage for a signing certificate; packages are installed as they are.');
+                log(signing.own ? 'The Installer was installed with the certificate ' + signing.own.name + '.' : 'Could not read the Installer\'s own signature.');
+                // After start-up: opening the stored certificate is slow on a TV CPU.
+                setTimeout(function () {
+                    var s = signing.summary(null);
+                    if (s.configured && s.matchesInstaller === false) {
+                        log('Warning: the stored certificate ' + s.label + ' is not the one the Installer was installed with (' + signing.own.name + '); it can\'t update itself.');
+                    }
+                }, 0);
                 if (cb) cb(server.address().port);
             });
             return server;

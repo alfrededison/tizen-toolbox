@@ -49,7 +49,56 @@ function defaultCandidates(packageId) {
     ];
 }
 
-function createSigningStore(dir) {
+// The Installer's own author-signature.xml (it records the author certificate
+// the Installer was installed with), looked for above the running service.
+function findOwnSignature(start) {
+    var dir = start;
+    for (var i = 0; i < 5; i++) {
+        var f = path.join(dir, 'author-signature.xml');
+        if (fs.existsSync(f)) return f;
+        var up = path.dirname(dir);
+        if (up === dir) break;
+        dir = up;
+    }
+    return null;
+}
+
+// The signer certificate of a signature file (the first <X509Certificate>), or null.
+function readSigner(file) {
+    try {
+        var m = /<X509Certificate>([^<]+)<\/X509Certificate>/.exec(fs.readFileSync(file, 'utf8'));
+        return m ? tizenSign.certificateFromBase64(m[1]) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// How a certificate pair is shown to users. A Samsung author certificate's own
+// name is often shared by several pairs (e.g. one per privilege level), so the
+// distributor's level is added to tell them apart: "Jelly2Sams (Partner)".
+function labelOf(author, distributor) {
+    return author.name + (distributor && distributor.level ? ' (' + distributor.level + ')' : '');
+}
+
+// The author certificate the Installer was installed with, from its own
+// author-signature.xml (and its level from signature1.xml next to it).
+function readOwnSigner(authorSignatureFile) {
+    var author = authorSignatureFile && readSigner(authorSignatureFile);
+    if (!author) return null;
+    var distributor = readSigner(path.join(path.dirname(authorSignatureFile), 'signature1.xml'));
+    return {
+        // Re-encoded the same way as ours, so equal certificates compare equal.
+        cert: tizenSign.certificateBase64(author),
+        name: labelOf(tizenSign.describe({ leaf: author }), distributor && tizenSign.describe({ leaf: distributor }))
+    };
+}
+
+// ownSignatureFile: the Installer's own author-signature.xml, to warn when the
+// stored author certificate differs from the one the Installer was installed
+// with (it then can't update itself).
+function createSigningStore(dir, ownSignatureFile) {
+    var own = readOwnSigner(ownSignatureFile);
+
     var cached = null;
     // A stored set that fails to open stays broken until replaced or removed;
     // remembering that keeps status polls from re-running the slow PKCS#12 decode.
@@ -93,9 +142,12 @@ function createSigningStore(dir) {
         return {
             configured: true,
             storage: true,
+            label: labelOf(author, distributor),
             author: author,
             distributor: distributor,
-            coversThisTv: duid ? distributor.duids.indexOf(duid) !== -1 : null
+            coversThisTv: duid ? distributor.duids.indexOf(duid) !== -1 : null,
+            // The TV compares an update's signer with the installed copy's signer.
+            matchesInstaller: own ? own.cert === tizenSign.certificateBase64(loaded.author.leaf) : null
         };
     }
 
@@ -104,6 +156,10 @@ function createSigningStore(dir) {
         var out = [];
         if (s.author && !s.author.samsung) out.push('The author certificate is not issued by Samsung; Samsung TVs reject packages signed with it.');
         if (s.distributor && !s.distributor.samsung) out.push('The distributor certificate is not issued by Samsung; Samsung TVs reject packages signed with it.');
+        if (s.matchesInstaller === false) {
+            out.push('The TV Installer was installed with ' + own.name + ', a different certificate, so it can\'t update itself ' +
+                'with this one. Upload the certificate it was installed with; for Apps2Samsung, the folder chosen in its Certificate setting.');
+        }
         if (s.coversThisTv === false) out.push('The distributor certificate does not list this TV (DUID ' + duid + '); add it with npm run cert -- add-tv ' + duid + '.');
         return out;
     }
@@ -152,7 +208,7 @@ function createSigningStore(dir) {
         return tizenSign.signPackage(buffer, keys.author, keys.distributor);
     }
 
-    return { dir: dir, configured: configured, load: load, summary: summary, save: save, remove: remove, signPackage: signPackage };
+    return { dir: dir, own: own, configured: configured, load: load, summary: summary, save: save, remove: remove, signPackage: signPackage };
 }
 
-module.exports = { createSigningStore: createSigningStore, findPrivateDir: findPrivateDir, defaultCandidates: defaultCandidates };
+module.exports = { createSigningStore: createSigningStore, findOwnSignature: findOwnSignature, findPrivateDir: findPrivateDir, defaultCandidates: defaultCandidates };

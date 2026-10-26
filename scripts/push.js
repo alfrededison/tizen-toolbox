@@ -78,7 +78,7 @@ async function main() {
         res = await request({ host, port, method: 'POST', path: '/api/cert', headers: { 'X-PIN': pin, 'Content-Type': 'application/json', 'Content-Length': body.length } }, body);
         if (res.status === 200) {
             const b = res.body;
-            console.log(`The TV now signs every install with ${b.author.name} / ${b.distributor.name} (TVs: ${b.distributor.duids.join(', ') || 'none'}).`);
+            console.log(`The TV now signs every install with ${b.label} (TVs: ${b.distributor.duids.join(', ') || 'none'}).`);
             for (const w of b.warnings || []) console.warn('Warning: ' + w);
             fs.writeFileSync(RC, JSON.stringify({ tv, pin }, null, 2));
             return;

@@ -57,12 +57,12 @@ function call(port, method, p, { body, pin, origin, json } = {}) {
     });
 }
 
-async function setup(t, { device, sdbHandlers, sdbOpts } = {}) {
+async function setup(t, { device, sdbHandlers, sdbOpts, ownSignatureFile = null } = {}) {
     const fake = await startFakeSdbd(sdbHandlers || [[/^0 vd_appinstall /, 'app_id[AbCdE12345] install completed\nspend time for wascmd is [10]ms\n']], sdbOpts || {});
     const devApi = await startFakeDevApi(device || { developerMode: '1', developerIP: '127.0.0.1', ip: '192.168.1.50', name: 'Frame' });
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tbox-'));
     const signingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tbox-signing-'));
-    const inst = createInstallerServer({ port: 0, pin: '123456', tmpDir, signingDir, sdb: { port: fake.port }, devInfo: { url: devApi.url }, quiet: true });
+    const inst = createInstallerServer({ port: 0, pin: '123456', tmpDir, signingDir, ownSignatureFile, sdb: { port: fake.port }, devInfo: { url: devApi.url }, quiet: true });
     const port = await new Promise((r) => inst.listen('127.0.0.1', r));
     t.after(async () => { inst.close(); await fake.close(); await devApi.close(); });
     return { fake, port, tmpDir, signingDir, inst };
@@ -263,7 +263,7 @@ test('certificate upload needs the PIN, checks the password and never returns th
     assert.ok(!JSON.stringify(ok.body).includes(PASSWORD));
 
     const status = await call(port, 'GET', '/api/status', web);
-    assert.deepStrictEqual(status.body.signing, { configured: true, error: null, name: 'Jelly2Sams', coversThisTv: true });
+    assert.deepStrictEqual(status.body.signing, { configured: true, error: null, name: 'Jelly2Sams (Public)', coversThisTv: true, matchesInstaller: null });
 
     const removed = await call(port, 'POST', '/api/cert/remove', { ...web, pin: '123456' });
     assert.strictEqual(removed.status, 200);
@@ -365,4 +365,49 @@ test('only requests without an Origin pass for the TV UI; "null" origins need th
     const withPin = await call(port, 'GET', '/api/cert', { origin: 'null', pin: '123456' });
     assert.strictEqual(withPin.status, 200);
     assert.strictEqual(withPin.headers['access-control-allow-origin'], '*');
+});
+
+// An author-signature.xml like the one installed with the Installer, holding `p12`'s certificates.
+function ownSignature(p12) {
+    const sign = require('../packages/tizen-sign');
+    const xml = (loaded) => '<Signature><KeyInfo><X509Data>' + loaded.certs.map((c) => '<X509Certificate>\n' + sign.certificateBase64(c) + '\n</X509Certificate>').join('') + '</X509Data></KeyInfo></Signature>';
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tbox-own-'));
+    fs.writeFileSync(path.join(dir, 'author-signature.xml'), xml(sign.loadP12(p12, PASSWORD)));
+    const distributor = makeP12({ cn: 'TizenSDK', issuer: 'VD DEVELOPER Partner CA Class', duids: ['BDCI6YW6SR6YO'] });
+    fs.writeFileSync(path.join(dir, 'signature1.xml'), xml(sign.loadP12(distributor, PASSWORD)));
+    return path.join(dir, 'author-signature.xml');
+}
+
+test('a certificate that is not the one the Installer was installed with is flagged', async (t) => {
+    const installedWith = makeP12({ cn: 'Jelly2Sams', issuer: 'Samsung VD Author CA' });
+    const { port } = await setup(t, { ownSignatureFile: ownSignature(installedWith), sdbHandlers: [['0 getduid', 'BDCI6YW6SR6YO\n']] });
+
+    const other = await call(port, 'POST', '/api/cert', { json: certBody(['BDCI6YW6SR6YO']) });
+    assert.strictEqual(other.body.matchesInstaller, false);
+    assert.match(other.body.warnings.join(' '), /installed with Jelly2Sams \(Partner\), a different certificate/);
+    assert.strictEqual((await call(port, 'GET', '/api/status')).body.signing.matchesInstaller, false);
+
+    const same = await call(port, 'POST', '/api/cert', { json: { ...certBody(['BDCI6YW6SR6YO']), author: installedWith.toString('base64') } });
+    assert.strictEqual(same.body.matchesInstaller, true);
+    assert.deepStrictEqual(same.body.warnings, []);
+    assert.strictEqual(same.body.label, 'Jelly2Sams (Public)');
+});
+
+test('a refused self-update with the matching certificate does not blame the certificate', async (t) => {
+    const installedWith = makeP12({ cn: 'Jelly2Sams', issuer: 'Samsung VD Author CA' });
+    const { port } = await setup(t, {
+        ownSignatureFile: ownSignature(installedWith),
+        sdbHandlers: [[/^0 vd_appinstall /, 'app_id[TboxInst01] install failed[118, -11], reason: Author certificate not match :\nspend time for wascmd is [9]ms\n']],
+    });
+    await call(port, 'POST', '/api/cert', { json: { ...certBody(['BDCI6YW6SR6YO']), author: installedWith.toString('base64') } });
+    const res = await call(port, 'POST', '/api/install', { body: await makeWgt({ pkg: 'TboxInst01', name: 'TV Installer' }) });
+    assert.doesNotMatch(res.body.hint, /Upload the certificate it was installed with/);
+});
+
+test('a refused self-update says to upload the certificate the Installer was installed with', async (t) => {
+    const { port } = await setup(t, { sdbHandlers: [[/^0 vd_appinstall /, 'app_id[TboxInst01] install failed[118, -11], reason: Author certificate not match :\nspend time for wascmd is [9]ms\n']] });
+    await call(port, 'POST', '/api/cert', { json: certBody(['BDCI6YW6SR6YO']) });
+    const res = await call(port, 'POST', '/api/install', { body: await makeWgt({ pkg: 'TboxInst01', name: 'TV Installer' }) });
+    assert.strictEqual(res.body.ok, false);
+    assert.match(res.body.hint, /Upload the certificate it was installed with/);
 });

@@ -18,9 +18,10 @@ function loadTizenJs() {
 
 test('loadP12 and describe read the certificate facts users see', () => {
     const a = sign.describe(sign.loadP12(author, PASSWORD));
-    assert.deepStrictEqual(a, { name: 'Jelly2Sams', issuer: 'Samsung VD Author CA', samsung: true, expires: '2027-09-14T00:00:00.000Z', duids: [] });
+    assert.deepStrictEqual(a, { name: 'Jelly2Sams', issuer: 'Samsung VD Author CA', samsung: true, level: null, expires: '2027-09-14T00:00:00.000Z', duids: [] });
     const d = sign.describe(sign.loadP12(distributor, PASSWORD));
     assert.deepStrictEqual(d.duids, ['BDCI6YW6SR6YO']);
+    assert.strictEqual(d.level, 'Public');
     assert.throws(() => sign.loadP12(author, 'wrong'), /Invalid password|MAC/i);
 });
 

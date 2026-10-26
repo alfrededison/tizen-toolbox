@@ -55,6 +55,15 @@ function loadP12(buffer, password) {
     return { keyPem: keyPem, certs: certs, leaf: leaf };
 }
 
+// A certificate as the base64 text of an <X509Certificate> element, without line breaks.
+function certificateBase64(cert) {
+    return forge.pki.certificateToPem(cert).replace(/-----(BEGIN|END) CERTIFICATE-----/g, '').replace(/[\r\n]+/g, '');
+}
+
+function certificateFromBase64(b64) {
+    return forge.pki.certificateFromAsn1(forge.asn1.fromDer(forge.util.decode64(b64.replace(/\s+/g, ''))));
+}
+
 function cn(attrs) {
     var f = attrs.getField('CN');
     return f ? f.value : '?';
@@ -78,6 +87,8 @@ function describe(loaded) {
         name: cn(c.subject),
         issuer: cn(c.issuer),
         samsung: /samsung|\bVD\b/i.test(cn(c.issuer)),
+        // Samsung distributor certificates come from "VD DEVELOPER Public/Partner CA Class".
+        level: /partner/i.test(cn(c.issuer)) ? 'Partner' : /public/i.test(cn(c.issuer)) ? 'Public' : null,
         expires: c.validity.notAfter.toISOString(),
         duids: duidsOf(c)
     };
@@ -115,9 +126,7 @@ function signFiles(id, files, loaded) {
 
     var keyInfo = '<KeyInfo>\n<X509Data>';
     for (var j = 0; j < loaded.certs.length; j++) {
-        var b64 = wrap76(forge.pki.certificateToPem(loaded.certs[j])
-            .replace(/-----(BEGIN|END) CERTIFICATE-----/g, '')
-            .replace(/[\r\n]+/g, ''));
+        var b64 = wrap76(certificateBase64(loaded.certs[j]));
         keyInfo += '\n<X509Certificate>\n' + b64 + '\n</X509Certificate>';
     }
     keyInfo += '\n</X509Data>\n</KeyInfo>\n';
@@ -181,6 +190,8 @@ function signPackage(buffer, author, distributor) {
 module.exports = {
     loadP12: loadP12,
     describe: describe,
+    certificateBase64: certificateBase64,
+    certificateFromBase64: certificateFromBase64,
     signFiles: signFiles,
     signPackage: signPackage,
     SIGNATURE_FILE_RE: SIGNATURE_FILE_RE

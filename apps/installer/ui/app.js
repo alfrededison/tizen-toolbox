@@ -86,9 +86,10 @@
             badge(true, 'Service') +
             badge(!!d.devModeEnabled, 'Developer mode') +
             badge(!!d.hostIsLocal, 'Host 127.0.0.1') +
-            badge(sig.configured && !sig.error && sig.coversThisTv !== false,
+            badge(sig.configured && !sig.error && sig.coversThisTv !== false && sig.matchesInstaller !== false,
                 !sig.configured ? 'No signing certificate' : sig.error ? 'Certificate error' :
-                    sig.coversThisTv === false ? 'Certificate not for this TV' : 'Signing: ' + esc(sig.name));
+                    sig.coversThisTv === false ? 'Certificate not for this TV' :
+                    sig.matchesInstaller === false ? 'Not the Installer\'s certificate' : 'Signing: ' + esc(sig.name));
         $('lanUrl').textContent = s.lanUrl || 'TV IP unknown';
         if (s.pin) pin = s.pin;
         $('pin').textContent = s.pin || '······';
