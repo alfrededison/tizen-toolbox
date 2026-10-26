@@ -1,0 +1,7 @@
+node_modules/
+build/
+dist/
+certs/
+*.p12
+.tvrc.json
+.DS_Store

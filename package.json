@@ -1,0 +1,35 @@
+{
+  "name": "tizen-toolbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-made Samsung Tizen TV apps that use Developer Mode host 127.0.0.1: a LAN app installer and a YouTube mod.",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alfrededison/tizen-toolbox.git"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "build:installer": "node scripts/build.js installer",
+    "sign": "node scripts/sign.js",
+    "push": "node scripts/push.js",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@vercel/ncc": "^0.38.3",
+    "acorn": "^8.14.0",
+    "jszip": "^3.10.1"
+  },
+  "optionalDependencies": {
+    "tizen": "https://github.com/reisxd/tizen.js/tarball/main"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

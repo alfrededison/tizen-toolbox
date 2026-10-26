@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TV Installer</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --muted:#9aa3b2; --accent:#4f8cff; --ok:#3fb27f; --bad:#e5534b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); padding:16px; }
+  main { max-width: 760px; margin: 0 auto; display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size: 20px; margin: 4px 0 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 10px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input[type=text], input[type=password] { flex:1 1 220px; min-width:0; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:#0b0d11; color:var(--text); font-size:15px; }
+  button { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:#232836; color:var(--text); font-size:14px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--bad); }
+  button:disabled { opacity:.5; cursor:default; }
+  #drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center; color:var(--muted); cursor:pointer; }
+  #drop.over { border-color:var(--accent); color:var(--text); }
+  .status { display:grid; grid-template-columns: max-content 1fr; gap:4px 12px; font-size:14px; }
+  .status dt { color:var(--muted); }
+  .status dd { margin:0; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  table { width:100%; border-collapse: collapse; font-size:14px; }
+  td { padding:7px 4px; border-top:1px solid var(--line); vertical-align: middle; }
+  td.id { color:var(--muted); font-family: ui-monospace, Menlo, monospace; font-size:12px; word-break: break-all; }
+  td.actions { text-align:right; white-space:nowrap; }
+  .tablewrap { overflow-x:auto; }
+  pre { background:#0b0d11; border:1px solid var(--line); border-radius:8px; padding:10px; max-height:260px; overflow:auto; font-size:12px; margin:0; white-space:pre-wrap; word-break:break-word; }
+  #msg { min-height: 1.4em; }
+  label.chk { color:var(--muted); font-size:13px; display:flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TV Installer</h1>
+
+  <section class="card">
+    <h2>PIN</h2>
+    <div class="row">
+      <input id="pin" type="password" inputmode="numeric" placeholder="6-digit PIN shown on the TV" autocomplete="off">
+      <button id="savePin">Save</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Install</h2>
+    <div id="drop">Drop a .wgt / .tpk here, or tap to choose a file
+      <input id="file" type="file" accept=".wgt,.tpk" hidden>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="url" type="text" placeholder="https://…/app.wgt  or  owner/repo (latest GitHub release)">
+      <button id="installUrl" class="primary">Install from URL</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label class="chk"><input id="force" type="checkbox"> Install even if the package is unsigned</label>
+    </div>
+    <p id="msg"></p>
+  </section>
+
+  <section class="card">
+    <h2>TV</h2>
+    <dl class="status" id="status"><dt>Status</dt><dd>Loading…</dd></dl>
+  </section>
+
+  <section class="card">
+    <h2>Apps</h2>
+    <div class="row" style="margin-bottom:8px"><button id="refreshApps">Refresh</button></div>
+    <div class="tablewrap"><table id="apps"><tbody><tr><td>Enter the PIN to list apps.</td></tr></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var pin = '';
+  try { pin = localStorage.getItem('tboxPin') || ''; } catch (e) {}
+  $('pin').value = pin;
+
+  function setMsg(text, kind) {
+    var m = $('msg');
+    m.textContent = text || '';
+    m.className = kind || '';
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = Object.assign({ 'X-PIN': pin }, opts.headers || {});
+    return fetch(path, Object.assign({}, opts, { headers: headers })).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) { var e = new Error(body.error || ('HTTP ' + r.status)); e.status = r.status; e.code = body.code; throw e; }
+        return body;
+      });
+    });
+  }
+
+  $('savePin').onclick = function () {
+    pin = $('pin').value.trim();
+    try { localStorage.setItem('tboxPin', pin); } catch (e) {}
+    loadApps();
+  };
+
+  function forceQuery() { return $('force').checked ? '?force=1' : ''; }
+
+  function handleResult(res) {
+    if (res.ok) setMsg('Done: ' + (res.name || res.packageId) + ' ' + (res.version || ''), 'ok');
+    else setMsg('Failed: ' + (res.error || 'see log'), 'bad');
+    loadApps();
+  }
+
+  function handleError(e) {
+    if (e.code === 'UNSIGNED') setMsg(e.message + ' Tick the checkbox to try anyway.', 'bad');
+    else setMsg(e.message, 'bad');
+  }
+
+  function uploadFile(file) {
+    if (!file) return;
+    setMsg('Uploading ' + file.name + '…');
+    file.arrayBuffer().then(function (buf) {
+      return api('/api/install' + forceQuery(), { method: 'POST', body: buf, headers: { 'Content-Type': 'application/octet-stream' } });
+    }).then(handleResult, handleError);
+  }
+
+  var drop = $('drop');
+  drop.onclick = function () { $('file').click(); };
+  $('file').onchange = function () { uploadFile(this.files[0]); this.value = ''; };
+  drop.ondragover = function (e) { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = function () { drop.classList.remove('over'); };
+  drop.ondrop = function (e) { e.preventDefault(); drop.classList.remove('over'); uploadFile(e.dataTransfer.files[0]); };
+
+  $('installUrl').onclick = function () {
+    var url = $('url').value.trim();
+    if (!url) return;
+    setMsg('Downloading on the TV…');
+    api('/api/install-url' + forceQuery(), { method: 'POST', body: JSON.stringify({ url: url }), headers: { 'Content-Type': 'application/json' } })
+      .then(handleResult, handleError);
+  };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function loadApps() {
+    if (!pin) return;
+    api('/api/apps').then(function (res) {
+      var rows = res.apps.map(function (a) {
+        return '<tr><td>' + esc(a.name) + '<br><small>' + esc(a.version) + '</small></td>' +
+          '<td class="id">' + esc(a.id) + '</td>' +
+          '<td class="actions"><button data-launch="' + esc(a.id) + '">Open</button> ' +
+          '<button class="danger" data-uninstall="' + esc(a.packageId) + '" data-name="' + esc(a.name) + '">Uninstall</button></td></tr>';
+      });
+      $('apps').innerHTML = '<tbody>' + (rows.join('') || '<tr><td>No apps reported.</td></tr>') + '</tbody>';
+    }, function (e) {
+      $('apps').innerHTML = '<tbody><tr><td class="bad">' + esc(e.message) + '</td></tr></tbody>';
+    });
+  }
+  $('refreshApps').onclick = loadApps;
+
+  $('apps').onclick = function (e) {
+    var t = e.target;
+    if (t.dataset.launch) {
+      api('/api/launch', { method: 'POST', body: JSON.stringify({ appId: t.dataset.launch }), headers: { 'Content-Type': 'application/json' } })
+        .then(function () { setMsg('Opened ' + t.dataset.launch, 'ok'); }, handleError);
+    } else if (t.dataset.uninstall) {
+      if (!confirm('Uninstall ' + t.dataset.name + ' (' + t.dataset.uninstall + ')?')) return;
+      setMsg('Uninstalling…');
+      api('/api/uninstall', { method: 'POST', body: JSON.stringify({ packageId: t.dataset.uninstall }), headers: { 'Content-Type': 'application/json' } })
+        .then(handleResult, handleError);
+    }
+  };
+
+  function yesNo(v) { return v ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'; }
+
+  function poll() {
+    fetch('/api/status').then(function (r) { return r.json(); }).then(function (s) {
+      var d = s.devInfo || {};
+      var html = '';
+      html += '<dt>Device</dt><dd>' + esc(d.name || d.model || 'unknown') + ' · Tizen ' + esc(s.platformVersion || '?') + '</dd>';
+      html += '<dt>Developer mode</dt><dd>' + yesNo(d.devModeEnabled) + '</dd>';
+      html += '<dt>Host PC IP</dt><dd>' + esc(d.hostIp || '?') + ' ' + (d.hostIsLocal ? '<span class="ok">✓</span>' : '<span class="bad">(must be 127.0.0.1)</span>') + '</dd>';
+      html += '<dt>Busy</dt><dd>' + (s.busy ? esc((s.current && s.current.step) || 'working') : 'idle') + '</dd>';
+      html += '<dt>Installer</dt><dd>v' + esc(s.version) + '</dd>';
+      $('status').innerHTML = html;
+      $('log').textContent = s.log.map(function (l) { return l.t.slice(11, 19) + '  ' + l.msg; }).join('\n');
+      $('log').scrollTop = $('log').scrollHeight;
+    }).catch(function () {
+      $('status').innerHTML = '<dt>Status</dt><dd class="bad">TV not reachable</dd>';
+    });
+  }
+  poll();
+  setInterval(poll, 2000);
+  loadApps();
+})();
+</script>
+</body>
+</html>

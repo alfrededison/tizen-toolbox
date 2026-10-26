@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TV Installer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="title">TV Installer <span id="ver"></span></div>
+      <div id="checks"></div>
+    </header>
+
+    <section id="connect">
+      <div class="label">On your phone or computer, open</div>
+      <div id="lanUrl" class="big">…</div>
+      <div class="label">PIN</div>
+      <div id="pin" class="big pin">······</div>
+    </section>
+
+    <section id="setup" class="hidden">
+      <div class="warn" id="setupText"></div>
+    </section>
+
+    <section id="appsBox">
+      <div class="sectionTitle">Installed apps <span class="hint">▲▼ select · OK actions · BACK exit</span></div>
+      <div id="apps"></div>
+      <div id="actions" class="hidden">
+        <span class="btn" data-act="launch">Open</span>
+        <span class="btn danger" data-act="uninstall">Uninstall</span>
+        <span class="btn" data-act="cancel">Cancel</span>
+      </div>
+    </section>
+
+    <section id="logBox">
+      <div class="sectionTitle">Activity</div>
+      <pre id="log"></pre>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

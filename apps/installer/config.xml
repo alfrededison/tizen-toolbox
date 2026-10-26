@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="https://github.com/alfrededison/tizen-toolbox/installer" version="0.1.0" viewmodes="maximized">
+    <access origin="*" subdomains="true"></access>
+    <tizen:application id="TboxInst01.Installer" package="TboxInst01" required_version="3.0"/>
+    <author href="https://github.com/alfrededison/tizen-toolbox">tizen-toolbox</author>
+    <content src="ui/index.html"/>
+    <feature name="http://tizen.org/feature/screen.size.all"/>
+    <feature name="http://tizen.org/feature/web.service"/>
+    <icon src="icon.png"/>
+    <name>TV Installer</name>
+    <tizen:privilege name="http://tizen.org/privilege/internet"/>
+    <tizen:privilege name="http://developer.samsung.com/privilege/network.public"/>
+    <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+    <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
+    <tizen:privilege name="http://tizen.org/privilege/application.info"/>
+    <tizen:profile name="tv-samsung"/>
+    <tizen:service id="TboxInst01.InstallerService" auto-restart="true" on-boot="true">
+        <tizen:content src="service/dist/index.js"/>
+        <tizen:name>InstallerService</tizen:name>
+        <tizen:description>LAN install API for TV Installer</tizen:description>
+    </tizen:service>
+    <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="enable" encryption="disable" install-location="auto" hwkey-event="enable"/>
+</widget>

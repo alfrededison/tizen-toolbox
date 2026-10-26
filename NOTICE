@@ -1,0 +1,12 @@
+tizen-toolbox
+Licensed under the GNU General Public License v3.0 only (see LICENSE).
+
+This project is derived from, and builds on, work by Reis Can (reisxd):
+  - TizenBrewInstaller  https://github.com/reisxd/TizenBrewInstaller  (GPL-3.0)
+      on-TV installation via the TV's own sdbd and vd_appinstall
+  - TizenTube           https://github.com/reisxd/TizenTube           (GPL-3.0)
+      DevTools-based userscript injection (planned for apps/ytmod)
+  - tizen.js            https://github.com/reisxd/tizen.js            (GPL-3.0)
+      package signing (used as an optional build-time dependency)
+
+The SDB packet format follows the public Android Debug Bridge protocol.

@@ -1,0 +1,8 @@
+{
+  "name": "@tizen-toolbox/sdb-core",
+  "version": "0.1.0",
+  "description": "Minimal SDB client for Tizen TV apps that talk to their own sdbd (Developer Mode host 127.0.0.1).",
+  "main": "index.js",
+  "license": "GPL-3.0-only",
+  "private": true
+}

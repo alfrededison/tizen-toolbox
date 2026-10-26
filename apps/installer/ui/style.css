@@ -1,0 +1,28 @@
+html, body { margin: 0; padding: 0; width: 1920px; height: 1080px; overflow: hidden; background: #0f1115; color: #e8eaf0; font-family: "Samsung One", Roboto, Arial, sans-serif; }
+#app { display: flex; flex-direction: column; height: 1080px; padding: 48px 80px; box-sizing: border-box; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+.title { font-size: 48px; font-weight: bold; }
+#ver { font-size: 26px; color: #9aa3b2; font-weight: normal; margin-left: 12px; }
+#checks span { display: inline-block; font-size: 24px; padding: 8px 16px; border-radius: 10px; margin-left: 12px; background: #1d212b; }
+#checks .ok { color: #3fb27f; }
+#checks .bad { color: #e5534b; }
+#connect { background: #181b22; border: 2px solid #2a2f3a; border-radius: 16px; padding: 22px 32px; display: flex; align-items: baseline; flex-wrap: wrap; }
+#connect .label { font-size: 26px; color: #9aa3b2; margin-right: 18px; }
+#connect .big { font-size: 46px; font-weight: bold; margin-right: 56px; color: #fff; }
+#connect .pin { letter-spacing: 8px; color: #4f8cff; }
+#setup { margin-top: 20px; }
+.warn { background: #3a1d1d; border: 2px solid #e5534b; border-radius: 16px; padding: 22px 32px; font-size: 28px; line-height: 1.5; }
+.sectionTitle { font-size: 26px; color: #9aa3b2; text-transform: uppercase; letter-spacing: 2px; margin: 28px 0 12px; }
+.hint { text-transform: none; letter-spacing: 0; font-size: 22px; margin-left: 18px; color: #6b7384; }
+#appsBox { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#apps { flex: 1; overflow: hidden; position: relative; }
+.appRow { display: flex; justify-content: space-between; font-size: 30px; padding: 12px 20px; border-radius: 10px; border: 3px solid transparent; }
+.appRow .id { color: #6b7384; font-size: 22px; font-family: monospace; }
+.appRow.focus { border-color: #4f8cff; background: #1b2436; }
+#actions { padding: 14px 0 0; }
+.btn { display: inline-block; font-size: 28px; padding: 12px 30px; margin-right: 16px; border-radius: 10px; background: #232836; border: 3px solid transparent; }
+.btn.focus { border-color: #4f8cff; background: #2c3a57; }
+.btn.danger { color: #ff8a84; }
+#logBox { height: 250px; display: flex; flex-direction: column; }
+#log { flex: 1; margin: 0; background: #0b0d11; border: 2px solid #2a2f3a; border-radius: 12px; padding: 14px 18px; font-size: 20px; color: #b9c0cc; overflow: hidden; white-space: pre-wrap; }
+.hidden { display: none !important; }

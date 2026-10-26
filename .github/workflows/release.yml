@@ -1,0 +1,39 @@
+name: Build and release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm test
+      - name: Prepare author certificate (optional)
+        env:
+          TIZEN_AUTHOR_KEY_B64: ${{ secrets.TIZEN_AUTHOR_KEY_B64 }}
+        run: |
+          if [ -n "$TIZEN_AUTHOR_KEY_B64" ]; then
+            mkdir -p certs && echo "$TIZEN_AUTHOR_KEY_B64" | base64 -d > certs/author.p12
+          fi
+      - name: Build
+        env:
+          TIZEN_AUTHOR_KEY_PW: ${{ secrets.TIZEN_AUTHOR_KEY_PW }}
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wgt
+          path: dist/*.wgt
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.wgt
