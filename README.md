@@ -124,7 +124,6 @@ npm run build -- installer    # build one app
 
 ## Things still to verify on a real TV
 
-- `vd_appuninstall` output format and exit text (install output is well known; uninstall is assumed to be similar).
 - Whether the service's `on-boot` auto-start works with public-level signing.
 - Whether the Installer can update itself in place (the install runs in sdbd, so it should survive the app being restarted).
 - Where the service can keep the signing certificate: it tries `/home/owner/apps_rw/TboxInst01/data` and logs the folder it uses at startup.
