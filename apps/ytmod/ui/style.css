@@ -1,0 +1,37 @@
+html, body { margin: 0; padding: 0; width: 1920px; height: 1080px; overflow: hidden; background: #0f0f0f; color: #f1f1f1; font-family: "Samsung One", Roboto, Arial, sans-serif; }
+#app { width: 1920px; height: 1080px; position: relative; }
+.screen { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; box-sizing: border-box; padding: 80px 140px; }
+.hidden { display: none !important; }
+
+#splash, #loading { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.logo { width: 150px; height: 150px; border-radius: 50%; border: 10px solid #4cb4dc; box-sizing: border-box; color: #fff; font-size: 64px; line-height: 130px; text-align: center; padding-left: 10px; }
+.logo.spin { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.title { font-size: 72px; font-weight: bold; margin-top: 36px; }
+.title.small { font-size: 44px; font-weight: normal; }
+.sub { font-size: 32px; color: #aaa; margin-top: 14px; }
+.bar { width: 520px; height: 8px; border-radius: 4px; background: #333; margin-top: 48px; overflow: hidden; }
+#splashBar { height: 100%; width: 0; background: #2b7bb9; }
+.hint { font-size: 28px; color: #8a8a8a; margin-top: 48px; }
+.hint b { color: #ddd; }
+.hint b.green, b.green { color: #4cc26a; }
+
+.heading { font-size: 52px; font-weight: bold; margin-bottom: 18px; }
+.note { font-size: 28px; color: #aaa; margin-bottom: 24px; line-height: 1.4; }
+.list { max-height: 640px; overflow: hidden; }
+.item { font-size: 34px; padding: 16px 28px; border-radius: 12px; border: 3px solid transparent; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.item .tag { color: #8a8a8a; font-size: 28px; }
+.item.focus { background: #2b7bb9; border-color: #8cc4f0; color: #fff; font-weight: bold; }
+.item.focus .tag { color: #dbeeff; font-weight: normal; }
+.item.current .name:after { content: "  ✓"; color: #4cc26a; }
+.item.focus.current .name:after { color: #fff; }
+
+.error { font-size: 32px; color: #ff8a84; background: #3a1d1d; border: 2px solid #b8352e; border-radius: 14px; padding: 18px 26px; margin-bottom: 26px; line-height: 1.4; }
+.steps { margin-bottom: 24px; }
+.step { font-size: 30px; padding: 6px 0; }
+.step .icon { display: inline-block; width: 52px; }
+.step.ok .icon { color: #4cc26a; }
+.step.fail .icon { color: #ff6b63; }
+.step.pending .icon, .step.skip .icon { color: #666; }
+.step .detail { color: #8a8a8a; font-size: 24px; margin-left: 14px; }
+#statusLog { font-size: 20px; color: #b9b9b9; background: #080808; border: 2px solid #2a2a2a; border-radius: 12px; padding: 14px 18px; height: 300px; overflow: hidden; white-space: pre-wrap; margin: 0; }

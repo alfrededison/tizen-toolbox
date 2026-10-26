@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>YT Mod</title>
+<link rel="stylesheet" href="style.css">
+<script src="$WEBAPIS/webapis/webapis.js"></script>
+</head>
+<body>
+  <div id="app">
+    <section id="splash" class="screen">
+      <div class="logo">▶</div>
+      <div class="title">YT Mod</div>
+      <div id="splashScript" class="sub">…</div>
+      <div class="bar"><div id="splashBar"></div></div>
+      <div class="hint"><b>▲</b> or <b class="green">GREEN</b> settings · <b>OK</b> start now · <b>BACK</b> exit</div>
+    </section>
+
+    <section id="loading" class="screen hidden">
+      <div class="logo spin">▶</div>
+      <div id="loadingText" class="title small">Starting YouTube…</div>
+    </section>
+
+    <section id="settings" class="screen hidden">
+      <div class="heading">Userscript source</div>
+      <div class="note">Pick which TizenTube build to inject. "Bundled" always works offline; npm versions are downloaded once and cached.</div>
+      <div id="settingsList" class="list"></div>
+      <div id="settingsNote" class="note"></div>
+      <div class="hint"><b>▲▼</b> choose · <b>OK</b> select · <b>BACK</b> return</div>
+    </section>
+
+    <section id="status" class="screen hidden">
+      <div id="statusTitle" class="heading">YT Mod could not start</div>
+      <div id="statusError" class="error"></div>
+      <div id="steps" class="steps"></div>
+      <pre id="statusLog"></pre>
+      <div class="hint"><b>OK</b> retry · <b class="green">GREEN</b> settings · <b>BACK</b> exit</div>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -62,7 +62,7 @@ async function bundleService(appDir) {
         sourceType: 'script',
         compact: false,
         comments: false,
-        presets: [[require.resolve('@babel/preset-env'), { targets: { node: '4' }, modules: false }]]
+        presets: [[require.resolve('@babel/preset-env'), { targets: { node: '4' }, forceAllTransforms: true, modules: false }]]
     });
     if (/regeneratorRuntime/.test(result.code)) {
         throw new Error('Service bundle needs regeneratorRuntime (async/generator code). Avoid async functions in service code or add the runtime.');
@@ -97,6 +97,13 @@ async function buildApp(name) {
     }
     copyDir(path.join(appDir, 'ui'), path.join(stage, 'ui'));
     // service/web/* is picked up by ncc as assets and emitted next to the bundle.
+
+    // Optional per-app hook to add generated files to the package.
+    const prepare = path.join(appDir, 'prepare.js');
+    if (fs.existsSync(prepare)) {
+        const note = await require(prepare)({ stage, appDir, root: ROOT });
+        if (note) console.log('  ' + note);
+    }
 
     const bundle = await bundleService(appDir);
     if (bundle) {

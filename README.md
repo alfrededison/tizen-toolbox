@@ -7,8 +7,9 @@ Two apps, one shared core:
 | Path | What it is | Status |
 | --- | --- | --- |
 | `apps/installer` | **TV Installer** — install `.wgt`/`.tpk` over your LAN from a phone/computer browser or `npm run push`, list/open/uninstall apps. | v1.0.0, tested on a Tizen 6.5 TV |
-| `apps/ytmod` | **YouTube mod** — loads YouTube TV with a pinned, bundled userscript (TizenTube-based) injected over DevTools. | planned |
+| `apps/ytmod` | **YT Mod** — YouTube TV with the TizenTube userscript (ad blocking, SponsorBlock) injected over DevTools; bundled + pinned, switchable to any npm version on the TV. See [apps/ytmod](apps/ytmod/README.md). | v0.1.0, needs on-TV testing |
 | `packages/sdb-core` | Minimal SDB client (handshake, shell, `vd_appinstall`, `vd_appuninstall`, `debug`) shared by both apps. | tested against a fake sdbd |
+| `packages/fetch-lite` | Small HTTP(S) downloader shared by both apps (redirects, size cap, GitHub release lookup). | |
 
 Why: TizenBrew and TizenTube keep breaking, and keeping the host on 127.0.0.1 used to block installing other apps. With the Installer on the TV, the host can stay on 127.0.0.1 permanently and every other app (including the YouTube mod) is installed from the TV itself.
 
@@ -70,7 +71,7 @@ On your computer (Node 18+), from a checkout of this repo. The certificate lives
 
 Any `.wgt` / `.tpk` works, whoever built it: the Installer drops the package's own signatures and signs it with your certificate before installing.
 
-- **Browser:** open the address shown on the TV, enter the PIN, drop a `.wgt`, or paste a URL / `owner/repo` (installs that repo's latest GitHub release).
+- **Browser:** open the address shown on the TV, enter the PIN, drop a `.wgt`, or paste a URL / `owner/repo` (installs that repo's latest GitHub release; `owner/repo:name` picks the package whose file name contains `name` when a release has several).
 - **Command line:**
   ```sh
   npm run push -- dist/ytmod.wgt --tv 192.168.1.20 --pin 123456   # remembered in .tvrc.json
@@ -82,16 +83,25 @@ The Installer's service starts at boot, so uploads work without opening the app 
 
 Re-signing means an app is installed under your author certificate. An app that is already on the TV with someone else's signature can't be updated that way: uninstall it once, then install it through the Installer.
 
-## Updating the Installer
-
-The Installer can install a new version of itself; it re-signs it with your certificate like any other package. On the browser page, paste `alfrededison/tizen-toolbox` to install the latest release, or from a checkout:
+## Installing YT Mod
 
 ```sh
-npm run push -- --url alfrededison/tizen-toolbox     # latest release
+npm run build -- ytmod
+npm run push -- dist/ytmod-unsigned.wgt          # or: npm run push -- --url alfrededison/tizen-toolbox:ytmod
+```
+
+Then open **YT Mod** on the TV. Details, settings and troubleshooting: [apps/ytmod/README.md](apps/ytmod/README.md).
+
+## Updating the Installer
+
+The Installer can install a new version of itself; it re-signs it with your certificate like any other package. On the browser page, paste `alfrededison/tizen-toolbox:installer` to install the latest release, or from a checkout:
+
+```sh
+npm run push -- --url alfrededison/tizen-toolbox:installer   # latest release
 npm run push -- dist/installer.wgt                   # or your own build
 ```
 
-Releases are unsigned, so anyone can install them with their own certificate. To publish one, bump the version (`npm run bump:installer -- patch`, and the repo's `package.json` by hand), merge to `main`, and push a matching tag (`git tag v1.0.1 && git push origin v1.0.1`). The workflow checks the tag against `apps/installer/config.xml`, runs the tests, builds, and attaches `installer-unsigned.wgt` to a GitHub release.
+Releases are unsigned, so anyone can install them with their own certificate. To publish one, bump the version (`npm run bump:installer -- patch`, and the repo's `package.json` by hand), merge to `main`, and push a matching tag (`git tag v1.0.1 && git push origin v1.0.1`). The workflow checks the tag against `apps/installer/config.xml`, runs the tests, builds, and attaches `installer-unsigned.wgt` and `ytmod-unsigned.wgt` to a GitHub release.
 
 ## Signing
 
@@ -112,12 +122,12 @@ phone / laptop ──HTTP + PIN──▶ Installer service (Node, on the TV, :80
 
 - sdbd only trusts the configured Host PC IP, so it is never exposed to the LAN; the service's PIN-protected API is the only door. Five different wrong PINs lock it for a minute.
 - The TV UI (packaged page, no web origin) can call the API without a PIN; web pages — including ones opened in the TV's own browser — cannot.
-- The service is bundled with ncc, transpiled to ES5 / Node 4 with Babel, and the build fails if the bundle is not valid ES5, so it runs on old Tizen Node runtimes.
+- Services are bundled with ncc, fully transpiled to ES5 with Babel (`forceAllTransforms`), and the build fails if a bundle is not valid ES5, so they run on old Tizen Node runtimes.
 
 ## Development
 
 ```sh
-npm test                      # sdb-core + installer API + built bundle smoke test (fake sdbd)
+npm test                      # sdb-core, installer API, YT Mod flow (fake sdbd / DevTools / npm registry), built bundle smoke tests
 npm run build -- installer    # build one app
 ```
 
@@ -127,6 +137,7 @@ npm run build -- installer    # build one app
 
 - Whether the service's `on-boot` auto-start works with public-level signing.
 - How long re-signing a large package takes on the TV's CPU.
+- YT Mod: which host the DevTools port answers on (it tries 127.0.0.1, then the TV's LAN IP), and that `Page.setBypassCSP` and key registration behave as in TizenTube's injector.
 
 ## Credits & license
 

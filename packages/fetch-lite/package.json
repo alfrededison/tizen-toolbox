@@ -1,0 +1,8 @@
+{
+  "name": "@tizen-toolbox/fetch-lite",
+  "version": "0.1.0",
+  "description": "Tiny HTTP(S) downloader (redirects, size cap, old-root-CA fallback) for Tizen service apps.",
+  "main": "index.js",
+  "license": "GPL-3.0-only",
+  "private": true
+}

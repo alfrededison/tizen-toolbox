@@ -376,7 +376,7 @@ function createInstallerServer(options) {
         var url = String(input || '').trim();
         if (!url) return Promise.reject(Object.assign(new Error('Missing url'), { status: 400 }));
         var p;
-        if (/^[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+$/.test(url)) {
+        if (dl.RELEASE_SPEC_RE.test(url)) {
             log('Looking up the latest release of ' + url + ' on GitHub...');
             p = dl.resolveGitHubRelease(url, log).then(function (asset) {
                 log('Found ' + asset.name + ' (' + asset.tag + ')');
