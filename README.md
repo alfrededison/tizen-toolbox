@@ -101,7 +101,24 @@ npm run push -- --url alfrededison/tizen-toolbox:installer   # latest release
 npm run push -- dist/installer.wgt                   # or your own build
 ```
 
-Releases are unsigned, so anyone can install them with their own certificate. To publish one, bump the version (`npm run bump:installer -- patch`, and the repo's `package.json` by hand), merge to `main`, and push a matching tag (`git tag v1.0.1 && git push origin v1.0.1`). The workflow checks the tag against `apps/installer/config.xml`, runs the tests, builds, and attaches `installer-unsigned.wgt` and `ytmod-unsigned.wgt` to a GitHub release.
+Releases are unsigned, so anyone can install them with their own certificate.
+
+## Releasing
+
+Each app is released on its own, from `main`, by pushing a tag that matches its version:
+
+| App | Bump | Tag | Release asset |
+| --- | --- | --- | --- |
+| TV Installer | `npm run bump:installer -- patch` | `v1.0.1` | `installer-unsigned.wgt` (marked *Latest*) |
+| YT Mod | `npm run bump:ytmod -- patch` | `ytmod-v0.1.2` | `ytmod-unsigned.wgt` |
+
+```sh
+npm run bump:ytmod -- patch          # updates config.xml, package.json, the service VERSION and package-lock
+git commit -am "YT Mod 0.1.2" && git push
+git tag ytmod-v0.1.2 && git push origin ytmod-v0.1.2
+```
+
+The workflow (`.github/workflows/release.yml`) works out the app from the tag, fails if the tag doesn't match `apps/<app>/config.xml`, runs the tests, builds only that app and publishes a GitHub release with its `.wgt`. Installer releases stay the repo's *Latest* release, so `alfrededison/tizen-toolbox` alone still means the Installer; `alfrededison/tizen-toolbox:ytmod` (or `:installer`) picks the newest release that contains that app. Running the workflow by hand on a branch builds and tests everything without releasing.
 
 ## Signing
 

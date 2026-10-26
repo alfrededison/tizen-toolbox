@@ -1,8 +1,15 @@
 name: Build and release
 
+# One tag per app release:
+#   v1.2.3        -> TV Installer 1.2.3   (attaches installer-unsigned.wgt, marked "Latest")
+#   ytmod-v0.2.0  -> YT Mod 0.2.0         (attaches ytmod-unsigned.wgt)
+# Bump first with `npm run bump:installer -- patch` / `npm run bump:ytmod -- patch`;
+# the tag must match the app's config.xml version.
+# Running the workflow by hand on a branch builds and tests every app without releasing.
+
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ['v*.*.*', 'ytmod-v*.*.*']
   workflow_dispatch:
 
 jobs:
@@ -15,25 +22,54 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Check the tag matches the Installer version
-        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Work out which app this tag releases
+        id: app
         run: |
-          version=$(sed -n 's/.*<widget[^>]*version="\([^"]*\)".*/\1/p' apps/installer/config.xml)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match apps/installer/config.xml version $version"
-            exit 1
+          ref="$GITHUB_REF_NAME"
+          app=""; version=""; title=""
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            case "$ref" in
+              ytmod-v*) app=ytmod;     version="${ref#ytmod-v}"; title="YT Mod $version" ;;
+              v*)       app=installer; version="${ref#v}";       title="TV Installer $version" ;;
+              *) echo "::error::Unknown tag $ref"; exit 1 ;;
+            esac
+            config_version=$(sed -n 's/.*<widget[^>]*version="\([^"]*\)".*/\1/p' "apps/$app/config.xml")
+            if [ "$config_version" != "$version" ]; then
+              echo "::error::Tag $ref does not match apps/$app/config.xml version $config_version"
+              exit 1
+            fi
           fi
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+          echo "Releasing: ${title:-nothing (build only)}"
+
       - run: npm install
       - run: npm test
+
       # Unsigned on purpose: a Samsung certificate only works on the TVs it
       # lists, so each user's own Installer (or Apps2Samsung) signs the package.
-      - run: npm run build
+      - name: Build
+        run: npm run build -- ${{ steps.app.outputs.app }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: wgt
           path: dist/*.wgt
+
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.app.outputs.app != ''
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.wgt
+          name: ${{ steps.app.outputs.title }}
+          files: dist/${{ steps.app.outputs.app }}-unsigned.wgt
+          # Keep the Installer as the repo's "Latest" release, so plain
+          # owner/repo installs it; owner/repo:ytmod finds YT Mod releases.
+          make_latest: ${{ steps.app.outputs.app == 'installer' }}
+          body: |
+            ${{ steps.app.outputs.title }}
+
+            Install from the TV Installer's browser page or with
+            `npm run push -- --url ${{ github.repository }}:${{ steps.app.outputs.app }}`.
+            The package is unsigned; the Installer signs it with your certificate.

@@ -12,7 +12,9 @@ npm run build -- ytmod                              # -> dist/ytmod-unsigned.wgt
 npm run push -- dist/ytmod-unsigned.wgt             # the Installer re-signs it with your certificate
 ```
 
-Or install the latest release from the TV Installer's browser page / `npm run push -- --url alfrededison/tizen-toolbox:ytmod`.
+Or install the latest release: paste `alfrededison/tizen-toolbox:ytmod` in the TV Installer's browser page, or `npm run push -- --url alfrededison/tizen-toolbox:ytmod`.
+
+To publish a release: `npm run bump:ytmod -- patch`, commit to `main`, then push a `ytmod-v<version>` tag (see [Releasing](../../README.md#releasing)).
 
 ## Using it
 

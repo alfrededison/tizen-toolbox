@@ -77,30 +77,55 @@ function download(url, opts, log) {
     });
 }
 
-// "owner/repo" -> URL of the first .wgt/.tpk asset of the latest release.
-// "owner/repo:part" -> the first such asset whose name contains "part"
-// (e.g. "alfrededison/tizen-toolbox:ytmod").
+// "owner/repo"      -> the first .wgt/.tpk asset of the repo's "Latest" release.
+// "owner/repo:part" -> the first .wgt/.tpk whose name contains "part", from the
+//                      newest published release that has one (so repos that
+//                      release several apps separately work, e.g.
+//                      "alfrededison/tizen-toolbox:ytmod").
 var RELEASE_SPEC_RE = /^([A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-]+)(?::([A-Za-z0-9_.\-]+))?$/;
+
+function githubApi(path) {
+    return (process.env.TBOX_GITHUB_API || 'https://api.github.com') + path;
+}
+
+function packagesOf(release) {
+    return (release.assets || []).filter(function (a) { return /\.(wgt|tpk)$/i.test(a.name); });
+}
 
 function resolveGitHubRelease(spec, log) {
     var m = RELEASE_SPEC_RE.exec(String(spec));
     if (!m) return Promise.reject(new Error('Expected owner/repo or owner/repo:name, got ' + spec));
     var repo = m[1];
     var filter = m[2] ? m[2].toLowerCase() : null;
-    var api = (process.env.TBOX_GITHUB_API || 'https://api.github.com') + '/repos/' + repo + '/releases/latest';
-    return download(api, { accept: 'application/vnd.github+json' }, log).then(function (buf) {
-        var release = JSON.parse(buf.toString('utf8'));
-        var packages = (release.assets || []).filter(function (a) { return /\.(wgt|tpk)$/i.test(a.name); });
-        var matching = filter ? packages.filter(function (a) { return a.name.toLowerCase().indexOf(filter) !== -1; }) : packages;
-        var names = packages.map(function (a) { return a.name; }).join(', ');
-        if (!matching.length) {
-            throw new Error('Latest release of ' + repo + ' has no ' + (filter ? '.wgt/.tpk matching "' + filter + '"' + (names ? ' (has: ' + names + ')' : '') : '.wgt or .tpk asset'));
+    var opts = { accept: 'application/vnd.github+json' };
+
+    if (!filter) {
+        return download(githubApi('/repos/' + repo + '/releases/latest'), opts, log).then(function (buf) {
+            var release = JSON.parse(buf.toString('utf8'));
+            var packages = packagesOf(release);
+            if (!packages.length) throw new Error('Latest release of ' + repo + ' has no .wgt or .tpk asset');
+            if (packages.length > 1 && log) {
+                log('Release has several packages (' + packages.map(function (a) { return a.name; }).join(', ') + '); using the first. Pick one with ' + repo + ':<part of the name>.');
+            }
+            return { url: packages[0].browser_download_url, name: packages[0].name, tag: release.tag_name };
+        });
+    }
+
+    return download(githubApi('/repos/' + repo + '/releases?per_page=30'), opts, log).then(function (buf) {
+        var releases = JSON.parse(buf.toString('utf8'));
+        var seen = [];
+        for (var i = 0; i < releases.length; i++) {
+            var r = releases[i];
+            if (r.draft || r.prerelease) continue;
+            var packages = packagesOf(r);
+            for (var j = 0; j < packages.length; j++) {
+                if (seen.indexOf(packages[j].name) === -1) seen.push(packages[j].name);
+                if (packages[j].name.toLowerCase().indexOf(filter) !== -1) {
+                    return { url: packages[j].browser_download_url, name: packages[j].name, tag: r.tag_name };
+                }
+            }
         }
-        if (matching.length > 1 && log) {
-            log('Release has several packages (' + matching.map(function (a) { return a.name; }).join(', ') + '); using the first. Pick one with ' + repo + ':<part of the name>.');
-        }
-        var asset = matching[0];
-        return { url: asset.browser_download_url, name: asset.name, tag: release.tag_name };
+        throw new Error('No release of ' + repo + ' has a .wgt/.tpk matching "' + filter + '"' + (seen.length ? ' (found: ' + seen.join(', ') + ')' : ''));
     });
 }
 

@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 'use strict';
 
-// Bumps the Installer app version everywhere it is recorded:
-// config.xml (what the TV sees), its package.json, the VERSION the service
-// reports, and the matching package-lock.json entry.
+// Bumps an app's version everywhere it is recorded: config.xml (what the TV
+// sees), its package.json, the VERSION its service reports, and the matching
+// package-lock.json entry.
 //
-//   npm run bump:installer -- patch     # 0.1.1 -> 0.1.2
-//   npm run bump:installer -- minor     # 0.1.1 -> 0.2.0
-//   npm run bump:installer -- 1.0.0
+//   npm run bump:installer -- patch     # 1.0.0 -> 1.0.1
+//   npm run bump:ytmod -- minor         # 0.1.1 -> 0.2.0
+//   node scripts/bump.js ytmod 0.3.0
+//
+// Then tag the release: v<version> for the Installer, ytmod-v<version> for YT Mod.
 
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const APP_DIR = path.join(ROOT, 'apps', 'installer');
-const LOCK_KEY = 'apps/installer';
+const APPS = {
+    installer: { label: 'Installer', tag: (v) => `v${v}` },
+    ytmod: { label: 'YT Mod', tag: (v) => `ytmod-v${v}` },
+};
 
 // Tizen widget versions are x.y.z with x, y <= 255 and z <= 65535.
 const LIMITS = [255, 255, 65535];
@@ -46,7 +50,7 @@ function textEdit(file, re) {
     };
 }
 
-function lockEdit(file) {
+function lockEdit(file, LOCK_KEY) {
     const lock = JSON.parse(fs.readFileSync(file, 'utf8'));
     const entry = lock.packages && lock.packages[LOCK_KEY];
     if (!entry) throw new Error(`No "${LOCK_KEY}" entry in package-lock.json`);
@@ -58,17 +62,19 @@ function lockEdit(file) {
 }
 
 function main() {
-    const arg = process.argv[2];
-    if (!arg) {
-        console.error('Usage: npm run bump:installer -- <patch|minor|major|x.y.z>');
+    const [appName, arg] = process.argv.slice(2);
+    const app = APPS[appName];
+    if (!app || !arg) {
+        console.error(`Usage: node scripts/bump.js <${Object.keys(APPS).join('|')}> <patch|minor|major|x.y.z>`);
         process.exit(2);
     }
+    const APP_DIR = path.join(ROOT, 'apps', appName);
 
     const edits = [
         textEdit(path.join(APP_DIR, 'config.xml'), /<widget\b[^>]*\bversion="([^"]+)"/),
         textEdit(path.join(APP_DIR, 'package.json'), /^ {2}"version": "([^"]+)"/m),
         textEdit(path.join(APP_DIR, 'service', 'lib', 'server.js'), /^var VERSION = '([^']+)';/m),
-        lockEdit(path.join(ROOT, 'package-lock.json')),
+        lockEdit(path.join(ROOT, 'package-lock.json'), `apps/${appName}`),
     ];
 
     const current = edits[0].current;
@@ -86,7 +92,8 @@ function main() {
     // Compute every file before writing any, so a failure leaves nothing half-bumped.
     const outputs = edits.map((e) => [e.file, e.apply(version)]);
     for (const [file, text] of outputs) fs.writeFileSync(file, text);
-    console.log(`Installer ${current} -> ${version}`);
+    console.log(`${app.label} ${current} -> ${version}`);
+    console.log(`Release it: commit, merge to main, then  git tag ${app.tag(version)} && git push origin ${app.tag(version)}`);
 }
 
 try {
